@@ -396,13 +396,10 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
         attribution: "© OpenStreetMap",
         crossOrigin: true,
       });
-      // Diagnostic: if tiles fail to load (CORS, blocked by extension, OSM
-      // policy), log it so the failure mode is visible in the console.
       tiles.on("tileerror", (e: any) => {
         console.warn("[map] tile load error:", e?.tile?.src ?? e);
       });
       tiles.on("tileload", () => {
-        // Fires on each successful tile — log only the first to confirm wiring
         if (!(window as any).__trailaTilesOk) {
           (window as any).__trailaTilesOk = true;
           console.log("[map] first tile loaded");
@@ -410,27 +407,107 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
       });
       tiles.addTo(map);
 
-      const overlayCol = ACTIVE_OVERLAY.pickColumn(view);
+      // ── Overlay layer group: all colored segments live here, so we
+      // can rebuild them on band/threshold change without rebuilding the
+      // whole map.
+      const overlayLayer = L.layerGroup().addTo(map);
 
-      if (overlayCol) {
-        const vals = view.col(overlayCol);
+      // Pre-compute sorted values per available band column, used for
+      // percentile lookups when threshold filtering is active.
+      const noiseCols = view.colsWithPrefix("noise_band_").sort();
+      const allNoiseCols = (view.has("noise_db") ? ["noise_db"] : []).concat(noiseCols);
+      const sortedByCol: Record<string, number[]> = {};
+      for (const c of allNoiseCols) {
+        sortedByCol[c] = view
+          .col(c)
+          .filter((v) => !isNaN(v))
+          .sort((a, b) => a - b);
+      }
+
+      /**
+       * Look up a value's percentile rank within its column's distribution.
+       * Returns 0..1 (e.g. 0.92 means "louder than 92% of samples").
+       */
+      const rankIn = (sortedAsc: number[], v: number): number => {
+        if (!sortedAsc.length || isNaN(v)) return 0;
+        // Binary search for first index >= v
+        let lo = 0, hi = sortedAsc.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (sortedAsc[mid] < v) lo = mid + 1;
+          else hi = mid;
+        }
+        return lo / sortedAsc.length;
+      };
+
+      /**
+       * Render the polyline overlay for a given band/threshold.
+       * Called once at init, then again whenever the user changes controls.
+       */
+      function applyOverlay(bandColumn: string, percentileFloor: number) {
+        overlayLayer.clearLayers();
+
+        if (!view.has(bandColumn)) {
+          // Nothing to color by — fall back to a plain track
+          const pts = validIdx.map((i): [number, number] => [lat[i], lon[i]]);
+          L.polyline(pts, { color: "#ed6b41", weight: 3, opacity: 0.85 })
+            .addTo(overlayLayer);
+          return;
+        }
+
+        const vals = view.col(bandColumn);
+        const sortedAsc = sortedByCol[bandColumn] ?? [];
         const lo = percentile(vals, 0.05);
         const hi = percentile(vals, 0.95);
         const range = hi - lo || 1;
 
-        // Draw colored segments
+        // Pretty band name for tooltips/legend
+        const colDef = trip.metadata?.columns?.[bandColumn] ?? {};
+        const niceName = (() => {
+          if (bandColumn === "noise_db") return "Broadband";
+          const n = colDef.name ?? bandColumn;
+          return String(n).charAt(0).toUpperCase() + String(n).slice(1);
+        })();
+        const freqRange =
+          colDef.f_low_hz && colDef.f_high_hz
+            ? `${colDef.f_low_hz}–${colDef.f_high_hz} Hz`
+            : "";
+
+        // Draw one segment per consecutive valid pair.
+        // Below-threshold segments get faded opacity rather than hidden,
+        // so the user keeps geographic context.
         for (let k = 1; k < validIdx.length; k++) {
           const a = validIdx[k - 1];
           const b = validIdx[k];
           const v = (vals[a] + vals[b]) / 2;
           const t = isNaN(v) ? 0 : (v - lo) / range;
-          L.polyline(
+          const rank = rankIn(sortedAsc, v);
+          const aboveThreshold = rank >= percentileFloor;
+          const opacity = aboveThreshold ? 0.9 : 0.18;
+          const weight = aboveThreshold ? 5 : 3;
+
+          const seg = L.polyline(
             [
               [lat[a], lon[a]],
               [lat[b], lon[b]],
             ],
-            { color: colormapJet(t), weight: 4, opacity: 0.85 },
-          ).addTo(map);
+            { color: colormapJet(t), weight, opacity },
+          );
+
+          // Hover tooltip — built lazily via bindTooltip with `sticky: true`
+          // so it follows the cursor along the line.
+          const valStr = isNaN(v) ? "—" : v.toFixed(1);
+          const rankStr = isNaN(v) ? "" : `top ${((1 - rank) * 100).toFixed(0)}%`;
+          seg.bindTooltip(
+            `<div style="font-size:11px;line-height:1.4">
+               <strong>${niceName}</strong>
+               ${freqRange ? `<span style="opacity:.7"> ${freqRange}</span>` : ""}
+               <br>${valStr} dBFS
+               ${rankStr ? `<span style="opacity:.7"> · ${rankStr}</span>` : ""}
+             </div>`,
+            { sticky: true, direction: "top", opacity: 0.95 },
+          );
+          seg.addTo(overlayLayer);
         }
 
         // Legend
@@ -438,17 +515,21 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
         const lo$ = document.getElementById("legendLo");
         const hi$ = document.getElementById("legendHi");
         const note = document.getElementById("legendNote");
-        if (legendTitle) legendTitle.textContent = ACTIVE_OVERLAY.title(view, trip, overlayCol);
+        if (legendTitle) {
+          legendTitle.textContent = `${niceName}${freqRange ? ` ${freqRange}` : ""} (dBFS)`;
+        }
         if (lo$) lo$.textContent = lo.toFixed(1);
         if (hi$) hi$.textContent = hi.toFixed(1);
-        if (note) note.textContent = "5–95th percentile";
-      } else {
-        // No data column → plain polyline
-        const pts = validIdx.map((i): [number, number] => [lat[i], lon[i]]);
-        L.polyline(pts, { color: "#ed6b41", weight: 3, opacity: 0.85 }).addTo(map);
+        if (note) {
+          note.textContent =
+            percentileFloor > 0
+              ? `Showing top ${((1 - percentileFloor) * 100).toFixed(0)}%`
+              : "5–95th percentile";
+        }
       }
 
-      // Start / end markers
+      // Start / end markers (drawn once, not part of overlay layer so they
+      // survive overlay rebuilds)
       const start = validIdx[0];
       const end = validIdx[validIdx.length - 1];
       L.circleMarker([lat[start], lon[start]], {
@@ -458,26 +539,46 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
         radius: 6, color: "#fff", fillColor: "#cf6b6b", fillOpacity: 1, weight: 2,
       }).bindTooltip("End").addTo(map);
 
+      // Initial overlay
+      const initialBand =
+        ACTIVE_OVERLAY.pickColumn(view) ?? allNoiseCols[allNoiseCols.length - 1] ?? "";
+      applyOverlay(initialBand, 0);
+
+      // Expose to React: list of available bands + the update function.
+      // The TripDashboard component picks these up in a useEffect after
+      // the renderer has run.
+      (window as any).__trailaBands = allNoiseCols.map((c) => {
+        const def = trip.metadata?.columns?.[c] ?? {};
+        const name =
+          c === "noise_db"
+            ? "Broadband"
+            : (def.name ?? c).charAt(0).toUpperCase() + (def.name ?? c).slice(1);
+        const range =
+          def.f_low_hz && def.f_high_hz
+            ? `${def.f_low_hz}–${def.f_high_hz} Hz`
+            : c === "noise_db"
+              ? "all"
+              : "";
+        return { column: c, name, range };
+      });
+      (window as any).__trailaUpdateOverlay = (band: string, percentileFloor: number) => {
+        applyOverlay(band, percentileFloor);
+      };
+      (window as any).__trailaInitialBand = initialBand;
+
       // Fit bounds
       const bounds = L.latLngBounds(validIdx.map((i: number) => [lat[i], lon[i]]));
       map.fitBounds(bounds, { padding: [20, 20] });
 
-      // ── Sizing fix ──────────────────────────────────────────────
-      // If renderDashboard() runs before the flex layout has settled
-      // (common when the data fetch resolves fast and the right column
-      // hasn't gotten its height yet), Leaflet sees a 0×0 container,
-      // initializes empty, and never recovers. Force an invalidate
-      // once layout is known and on every subsequent resize.
+      // Sizing settle (see earlier hydration discussion)
       const mapEl = document.getElementById("map");
       if (mapEl) {
-        // Initial settle — two RAFs is a reliable post-layout hook
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
             map.invalidateSize();
             map.fitBounds(bounds, { padding: [20, 20] });
           }),
         );
-        // Track later resizes (window, panel toggles, etc.)
         const ro = new ResizeObserver(() => map.invalidateSize());
         ro.observe(mapEl);
       }

@@ -6,6 +6,7 @@ import styles from "./dashboard.module.css";
 import { renderDashboard, PLOT_TABS } from "@/lib/dashboard-render";
 import type { Trip, MetricsResponse } from "@/lib/types";
 import { MetadataPanel } from "@/components/MetadataPanel";
+import { MapControls } from "@/components/MapControls";
 
 type Status =
   | { kind: "loading" }
@@ -106,6 +107,7 @@ export function TripDashboard({ trip }: { trip: Trip }) {
           {/* ============= LEFT PANEL — metadata + future additions ============= */}
           <aside className={`${styles.panel} ${styles.left}`}>
             <MetadataPanel trip={trip} status={status} styles={styles} />
+            <MapControls styles={styles} />
             {/*
               Reserved for future controls / panels.
               Add new <section className={styles.section}> blocks below
