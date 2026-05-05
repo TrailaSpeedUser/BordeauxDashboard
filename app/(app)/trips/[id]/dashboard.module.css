@@ -1,0 +1,232 @@
+.shell {
+  height: calc(100vh - 62px);
+}
+
+.wrap {
+  display: grid;
+  grid-template-columns: minmax(320px, 380px) 1fr;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.section {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+.section::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 3px;
+  background: linear-gradient(
+    180deg,
+    rgba(237, 107, 65, 0.0),
+    rgba(237, 107, 65, 0.55),
+    rgba(237, 107, 65, 0.0)
+  );
+  opacity: 0.55;
+}
+
+/* Trip header / metadata cards */
+.tripTitle {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.tripSubtitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.card {
+  background: var(--panel2);
+  border: 1px solid rgba(165, 156, 148, 0.15);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.k {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.4px;
+}
+
+.v {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.bandList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.bandRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 6px 8px;
+  background: var(--panel2);
+  border-radius: 8px;
+}
+
+.bandRow .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.bandRow .bandName {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Right-hand map + charts column */
+.right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mapwrap {
+  position: relative;
+  flex: 1 1 55%;
+  min-height: 280px;
+}
+
+.mapwrap > div#map {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px 18px 0 0;
+}
+
+.legend {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  background: rgba(31, 29, 26, 0.85);
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  z-index: 500;
+  min-width: 160px;
+}
+
+.legend .bar {
+  height: 8px;
+  border-radius: 4px;
+  margin: 6px 0;
+  background: linear-gradient(90deg, #2d6cb6, #4ec27d, #f3c64a, #ef7043, #c33b3b);
+}
+
+.legend .ticks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+}
+
+.charts {
+  flex: 1 1 45%;
+  min-height: 280px;
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  overflow: auto;
+}
+
+.chartBox {
+  position: relative;
+  min-height: 0;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chartTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
+}
+
+.chartBox > canvas {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.small { font-size: 11px; color: var(--muted); }
+
+.loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.loadError {
+  padding: 14px;
+  margin: 14px;
+  background: rgba(217, 107, 107, 0.10);
+  border: 1px solid rgba(217, 107, 107, 0.45);
+  color: #f0c4c4;
+  border-radius: 10px;
+}
