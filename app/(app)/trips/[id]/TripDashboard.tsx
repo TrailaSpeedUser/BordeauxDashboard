@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import styles from "./dashboard.module.css";
-import { renderDashboard } from "@/lib/dashboard-render";
+import { renderDashboard, PLOT_TABS } from "@/lib/dashboard-render";
 import type { Trip, MetricsResponse } from "@/lib/types";
 import { MetadataPanel } from "@/components/MetadataPanel";
 
@@ -15,6 +15,7 @@ type Status =
 export function TripDashboard({ trip }: { trip: Trip }) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [libsReady, setLibsReady] = useState({ leaflet: false, chart: false });
+  const [activeTab, setActiveTab] = useState(PLOT_TABS[0]?.canvasId ?? "");
   const renderedRef = useRef(false);
 
   // Fetch metrics
@@ -54,6 +55,31 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     }
   }, [libsReady, status, trip]);
 
+  // When the user switches tab, the previously hidden canvas was
+  // display:none → its parent had no size → Chart.js's last layout
+  // calculation for it is stale. Calling resize() once it's visible
+  // forces a clean re-layout.
+  useEffect(() => {
+    if (!renderedRef.current) return;
+    const charts = (typeof window !== "undefined"
+      ? (window as any).__trailaCharts
+      : null) as Record<string, any> | null;
+    const ch = charts?.[activeTab];
+    if (ch?.resize) {
+      // Two RAFs ensures the CSS toggle has flushed and the new container
+      // has a non-zero height before Chart.js measures.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          try {
+            ch.resize();
+          } catch {
+            /* noop */
+          }
+        }),
+      );
+    }
+  }, [activeTab]);
+
   return (
     <>
       <link
@@ -87,10 +113,10 @@ export function TripDashboard({ trip }: { trip: Trip }) {
             */}
           </aside>
 
-          {/* ============= RIGHT PANEL — map + plots ============= */}
+          {/* ============= RIGHT PANEL — map + tabbed plots ============= */}
           <section className={`${styles.panel} ${styles.right}`}>
             <div className={styles.mapwrap}>
-              <div id="map" />
+              <div id="map" style={{ width: "100%", height: "100%", borderRadius: "18px 18px 0 0" }} />
               <div className={styles.legend}>
                 <div id="legendTitle" className={styles.small}>
                   Track overlay
@@ -104,19 +130,36 @@ export function TripDashboard({ trip }: { trip: Trip }) {
               </div>
             </div>
 
-            <div className={styles.charts}>
-              <div className={styles.chartBox}>
-                <div className={styles.chartTitle}>Speed &amp; altitude (over distance)</div>
-                <canvas id="chartSpeed" />
-              </div>
-              <div className={styles.chartBox}>
-                <div className={styles.chartTitle}>Acceleration / gyroscope</div>
-                <canvas id="chartImu" />
-              </div>
-              <div className={styles.chartBox}>
-                <div className={styles.chartTitle}>Noise — broadband &amp; bands</div>
-                <canvas id="chartNoise" />
-              </div>
+            {/* Tab strip */}
+            <div className={styles.tabs} role="tablist">
+              {PLOT_TABS.map((tab) => (
+                <button
+                  key={tab.canvasId}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.canvasId}
+                  className={`${styles.tab} ${activeTab === tab.canvasId ? styles.tabActive : ""}`}
+                  onClick={() => setActiveTab(tab.canvasId)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Chart panes — all mounted, only the active one is visible.
+                Keeping all canvases mounted means renderDashboard() can
+                wire them up once on first render; tab switches only
+                toggle visibility. */}
+            <div className={styles.chartPaneWrap}>
+              {PLOT_TABS.map((tab) => (
+                <div
+                  key={tab.canvasId}
+                  className={styles.chartPane}
+                  style={{ display: activeTab === tab.canvasId ? "flex" : "none" }}
+                >
+                  <canvas id={tab.canvasId} />
+                </div>
+              ))}
             </div>
 
             {status.kind === "loading" && (

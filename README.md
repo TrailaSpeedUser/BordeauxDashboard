@@ -19,8 +19,8 @@ pipeline output.
     definitions in the left panel.
 - **Upload page** (admin only) — drop a `track_metrics.csv` and a
   `metadata.json`, the rest is automatic.
-- **Magic-link auth** via Supabase, with a two-tier role system: admins
-  upload, viewers read.
+- **Email + password auth** via Supabase, with a two-tier role system:
+  admins upload, viewers read. Password reset via email link.
 
 ## Architecture
 
@@ -233,29 +233,38 @@ git push -u origin main
 
 ### 4. Wire Supabase auth redirects
 
-Magic-link auth needs to know which URLs are safe to redirect to after
-login. In Supabase:
+Password reset emails contain a link that needs to land back in your
+app. In Supabase:
 
 1. **Authentication → URL Configuration**.
 2. **Site URL**: your Vercel production URL.
-3. **Redirect URLs**: add both
+3. **Redirect URLs**: add
    - `https://your-vercel-url.vercel.app/**`
    - `https://*-your-team.vercel.app/**` (covers preview deployments)
    - `http://localhost:3000/**` (for local dev)
 
-Save. Without this, login appears to succeed but the session cookie
-fails to set and you bounce back to `/login`.
+Save. Without this, the password-reset link in the email will fail
+with "Redirect URL not allowed."
+
+You may also want to disable open sign-ups so random people can't
+create accounts:
+
+1. **Authentication → Providers → Email** → turn **Confirm email**
+   on (recommended), and turn **Enable email signups** off if you
+   want admins to create users only.
 
 ### 5. Create the first admin user
 
 Supabase auto-creates every new user as a `viewer`. You promote them to
 `admin` manually.
 
-1. **Authentication → Users → Add user → Create new user**. Tick "Auto
-   Confirm User" so you can skip email verification.
-2. Visit your Vercel URL, sign in once with that email (this triggers
-   the profile-row creation).
-3. Back in **SQL Editor**, run:
+1. **Authentication → Users → Add user → Create new user**.
+2. Enter the email and a password (or have Supabase generate one).
+   Tick **Auto Confirm User** so the user can sign in immediately
+   without verifying email first.
+3. Visit your Vercel URL, sign in with that email + password (this
+   triggers the `profiles` row creation via the database trigger).
+4. Back in **SQL Editor**, run:
 
 ```sql
 update public.profiles
@@ -263,7 +272,12 @@ update public.profiles
  where email = 'you@example.com';
 ```
 
-4. Sign out and back in. The `Upload` link should appear in the nav.
+5. Sign out and back in. The `Upload` link should appear in the nav.
+
+To create additional users later, repeat steps 1–3. Send them their
+initial password through a secure channel (password manager share,
+1Password, etc.) — they can change it themselves via the "Forgot
+password?" link on the login screen, which sends them a reset email.
 
 ### 6. Upload your first trip
 
@@ -363,9 +377,21 @@ prefer that — the list above is a fallback.
 
 ## Troubleshooting
 
-**Login succeeds but I bounce back to `/login`.**
-The session cookie isn't being set. Almost always: the Vercel URL isn't
-in Supabase's redirect allow-list. Re-check step 4.
+**Login appears to succeed but I bounce back to `/login`.**
+The session cookie isn't being set. This usually means one of two
+things: cookies are blocked in the browser, or the Supabase project's
+Site URL doesn't match the URL you're actually on. Re-check step 4.
+
+**Password reset email link gives "Redirect URL not allowed".**
+The redirect URL isn't in Supabase's allow-list. Add the URL pattern
+under **Authentication → URL Configuration → Redirect URLs**.
+
+**A user gets "Invalid login credentials".**
+Either the email/password is wrong, or the user wasn't auto-confirmed
+when you created them in Supabase. Check the user in Supabase
+**Authentication → Users** — the "Last sign in at" column should be
+populated after first sign-in. If `email_confirmed_at` is null, edit
+the user and confirm them manually.
 
 **`/trips` errors with "relation `trips` does not exist".**
 The migration didn't run. Open Supabase SQL Editor, paste

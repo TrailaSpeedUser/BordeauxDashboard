@@ -142,15 +142,15 @@
 
 .mapwrap {
   position: relative;
-  flex: 1 1 55%;
-  min-height: 280px;
+  /* Fixed height instead of flex — deterministic, never starts at 0 */
+  height: clamp(280px, 50vh, 600px);
+  overflow: hidden;
+  flex: 0 0 auto;
 }
 
-.mapwrap > div#map {
-  position: absolute;
-  inset: 0;
-  border-radius: 18px 18px 0 0;
-}
+/* The #map div sets its own width/height inline (see TripDashboard.tsx).
+   Keeping selector-based styling out of CSS modules avoids hash-scoping
+   surprises. */
 
 .legend {
   position: absolute;
@@ -179,16 +179,72 @@
 }
 
 .charts {
+  /* Legacy — superseded by .tabs + .chartPaneWrap. Kept empty so any
+     stray references don't break. */
+}
+
+/* Tab strip under the map */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px 0 14px;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  flex-wrap: wrap;
+}
+
+.tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 8px 14px;
+  border-radius: 10px 10px 0 0;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.tab:hover {
+  color: var(--text);
+  background: rgba(237, 107, 65, 0.06);
+}
+
+.tabActive {
+  color: var(--text);
+  background: var(--panel2);
+  border-color: var(--border);
+  border-bottom-color: var(--panel2);
+  position: relative;
+  z-index: 1;
+}
+
+/* Single chart pane that swaps based on active tab */
+.chartPaneWrap {
   flex: 1 1 45%;
-  min-height: 280px;
-  display: grid;
-  grid-template-rows: 1fr 1fr 1fr;
-  gap: 10px;
-  padding: 12px 14px 14px;
-  overflow: auto;
+  min-height: 240px;
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chartPane {
+  flex: 1 1 0;
+  min-height: 0;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 0 12px 12px 12px;
+  padding: 10px 12px;
+}
+
+.chartPane > canvas {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .chartBox {
+  /* Legacy — used by older single-chart layout. Safe to remove later. */
   position: relative;
   min-height: 0;
   background: var(--panel2);

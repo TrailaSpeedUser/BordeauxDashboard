@@ -44,7 +44,7 @@ export default async function TripsPage() {
                 {t.session && <span>{t.session}</span>}
                 {t.recorded_on && <span>{t.recorded_on}</span>}
                 {t.duration_s && <span>{(t.duration_s / 60).toFixed(1)} min</span>}
-                {t.n_rows && <span>{t.n_rows.toLocaleString()} samples</span>}
+                {t.n_rows && <span>{t.n_rows.toLocaleString("en-US")} samples</span>}
               </div>
             </Link>
           ))}

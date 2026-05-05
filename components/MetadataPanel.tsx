@@ -55,7 +55,7 @@ export function MetadataPanel({
           <div className={styles.card}>
             <div className={styles.k}>Samples</div>
             <div className={styles.v}>
-              {(trip.n_rows ?? m.rows ?? 0).toLocaleString()}
+              {(trip.n_rows ?? m.rows ?? 0).toLocaleString("en-US")}
             </div>
           </div>
           <div className={styles.card}>

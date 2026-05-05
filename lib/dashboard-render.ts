@@ -91,6 +91,8 @@ type ChartCtx = {
 
 type PlotSpec = {
   canvasId: string;
+  /** Tab label shown in the UI. Keep short — fits in a tab. */
+  label: string;
   /** Returns a Chart.js config or null to skip (e.g. column missing). */
   build(ctx: ChartCtx): any | null;
 };
@@ -134,6 +136,7 @@ const PLOT_REGISTRY: PlotSpec[] = [
   // ─── Speed + altitude ──────────────────────────────────────────────────────
   {
     canvasId: "chartSpeed",
+    label: "Speed & altitude",
     build: ({ view, distanceKm, decimateTo }) => {
       if (!view.has("speed_kmh")) return null;
       const speed = view.col("speed_kmh");
@@ -180,6 +183,7 @@ const PLOT_REGISTRY: PlotSpec[] = [
   // ─── Acceleration / gyro ───────────────────────────────────────────────────
   {
     canvasId: "chartImu",
+    label: "Acceleration",
     build: ({ view, distanceKm, decimateTo }) => {
       const has = (c: string) => view.has(c);
       const xs = decimate(distanceKm, decimateTo);
@@ -219,6 +223,7 @@ const PLOT_REGISTRY: PlotSpec[] = [
   // ─── Noise (broadband + bands) ─────────────────────────────────────────────
   {
     canvasId: "chartNoise",
+    label: "Noise",
     build: ({ view, trip, distanceKm, decimateTo }) => {
       const xs = decimate(distanceKm, decimateTo);
       const ds: any[] = [];
@@ -264,6 +269,13 @@ const PLOT_REGISTRY: PlotSpec[] = [
     },
   },
 ];
+
+/**
+ * Public descriptor of the plot registry — what the UI uses to draw tabs.
+ * Adding a new plot above automatically adds a tab in the dashboard.
+ */
+export const PLOT_TABS: { canvasId: string; label: string }[] =
+  PLOT_REGISTRY.map(({ canvasId, label }) => ({ canvasId, label }));
 
 // ---------------------------------------------------------------------------
 // 3.  MAP OVERLAYS
@@ -341,6 +353,22 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
     return;
   }
 
+  // Idempotent: if a previous run left charts or a map behind (which can
+  // happen on a hydration recovery or HMR), destroy them first. Otherwise
+  // Leaflet refuses to re-init a container ("Map container is already
+  // initialized") and Chart.js leaks.
+  const w = window as any;
+  if (w.__trailaCharts) {
+    for (const ch of Object.values(w.__trailaCharts) as any[]) {
+      try { ch?.destroy?.(); } catch { /* noop */ }
+    }
+    w.__trailaCharts = null;
+  }
+  if (w.__trailaMap) {
+    try { w.__trailaMap.remove(); } catch { /* noop */ }
+    w.__trailaMap = null;
+  }
+
   const view = new DataView(data);
   const distanceM = computeDistanceM(view);
   const distanceKm = distanceM.map((d) => d / 1000);
@@ -362,9 +390,25 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
         lon[validIdx[Math.floor(validIdx.length / 2)]],
       ];
       const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(center, 15);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      (window as any).__trailaMap = map;
+      const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
-      }).addTo(map);
+        attribution: "© OpenStreetMap",
+        crossOrigin: true,
+      });
+      // Diagnostic: if tiles fail to load (CORS, blocked by extension, OSM
+      // policy), log it so the failure mode is visible in the console.
+      tiles.on("tileerror", (e: any) => {
+        console.warn("[map] tile load error:", e?.tile?.src ?? e);
+      });
+      tiles.on("tileload", () => {
+        // Fires on each successful tile — log only the first to confirm wiring
+        if (!(window as any).__trailaTilesOk) {
+          (window as any).__trailaTilesOk = true;
+          console.log("[map] first tile loaded");
+        }
+      });
+      tiles.addTo(map);
 
       const overlayCol = ACTIVE_OVERLAY.pickColumn(view);
 
@@ -417,6 +461,26 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
       // Fit bounds
       const bounds = L.latLngBounds(validIdx.map((i: number) => [lat[i], lon[i]]));
       map.fitBounds(bounds, { padding: [20, 20] });
+
+      // ── Sizing fix ──────────────────────────────────────────────
+      // If renderDashboard() runs before the flex layout has settled
+      // (common when the data fetch resolves fast and the right column
+      // hasn't gotten its height yet), Leaflet sees a 0×0 container,
+      // initializes empty, and never recovers. Force an invalidate
+      // once layout is known and on every subsequent resize.
+      const mapEl = document.getElementById("map");
+      if (mapEl) {
+        // Initial settle — two RAFs is a reliable post-layout hook
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            map.invalidateSize();
+            map.fitBounds(bounds, { padding: [20, 20] });
+          }),
+        );
+        // Track later resizes (window, panel toggles, etc.)
+        const ro = new ResizeObserver(() => map.invalidateSize());
+        ro.observe(mapEl);
+      }
     }
   }
 
@@ -432,11 +496,17 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
     decimateTo: 2500,
   };
 
+  // Registry of active chart instances by canvasId, for resize-on-tab-switch
+  const charts: Record<string, any> = {};
   for (const spec of PLOT_REGISTRY) {
     const el = document.getElementById(spec.canvasId) as HTMLCanvasElement | null;
     if (!el) continue;
     const cfg = spec.build(ctx);
     if (!cfg) continue;
-    new Chart(el, cfg);
+    charts[spec.canvasId] = new Chart(el, cfg);
   }
+  // Stash globally so TripDashboard can find them when a tab is activated.
+  // Plain window-level handle keeps the renderer pure-JS-callable from the
+  // React side without needing to thread refs through.
+  (window as any).__trailaCharts = charts;
 }
