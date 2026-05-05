@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 // Everything else lands in `extra` JSONB.
 const TYPED_COLUMNS = new Set([
   "ts",
+  "datetime",
+  "distance_m",
   "lat",
   "lon",
   "altitude_m",
@@ -22,6 +24,10 @@ const TYPED_COLUMNS = new Set([
   "noise_db",
 ]);
 
+// Subset of TYPED_COLUMNS whose values are strings (not numbers). Must
+// match the UploadForm's STRING_COLS set.
+const STRING_COLUMNS = new Set(["datetime"]);
+
 type Body = {
   action: "create" | "append";
   tripId?: string | null;
@@ -30,7 +36,7 @@ type Body = {
   metadata?: any;
   columns: string[];
   startSeq: number;
-  rows: (number | null)[][];
+  rows: (number | string | null)[][];
   finalize: boolean;
 };
 
@@ -103,7 +109,7 @@ export async function POST(req: NextRequest) {
   const records = body.rows.map((row, i) => {
     const seq = body.startSeq + i;
     const rec: any = { trip_id: tripId, seq, ts: row[colIdx["ts"]] ?? 0 };
-    const extra: Record<string, number | null> = {};
+    const extra: Record<string, number | string | null> = {};
 
     for (const col of body.columns) {
       const idx = colIdx[col];

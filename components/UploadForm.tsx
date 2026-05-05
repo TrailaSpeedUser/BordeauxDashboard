@@ -36,7 +36,11 @@ export function UploadForm() {
     }
 
     let columns: string[] = [];
-    let rows: (number | null)[][] = [];
+    let rows: (number | string | null)[][] = [];
+
+    // Columns whose CSV values are strings, not numbers. Must match the
+    // upload route's STRING_COLUMNS set.
+    const STRING_COLS = new Set(["datetime"]);
 
     await new Promise<void>((resolve, reject) => {
       Papa.parse<string[]>(csv, {
@@ -47,9 +51,14 @@ export function UploadForm() {
             return reject(new Error("Empty CSV."));
           }
           columns = (res.data[0] as unknown as string[]).map((c) => c.trim());
+          const stringColIdx = new Set<number>();
+          columns.forEach((c, i) => {
+            if (STRING_COLS.has(c)) stringColIdx.add(i);
+          });
           rows = (res.data.slice(1) as unknown as string[][]).map((row) =>
-            row.map((v) => {
+            row.map((v, i) => {
               if (v === "" || v === undefined || v === null) return null;
+              if (stringColIdx.has(i)) return v;
               const n = Number(v);
               return Number.isFinite(n) ? n : null;
             }),

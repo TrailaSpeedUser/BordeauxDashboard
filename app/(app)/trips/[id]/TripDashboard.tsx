@@ -17,6 +17,8 @@ export function TripDashboard({ trip }: { trip: Trip }) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [libsReady, setLibsReady] = useState({ leaflet: false, chart: false });
   const [activeTab, setActiveTab] = useState(PLOT_TABS[0]?.canvasId ?? "");
+  const [xAxis, setXAxis] = useState<"distance" | "time">("distance");
+  const [timeAvailable, setTimeAvailable] = useState(false);
   const renderedRef = useRef(false);
 
   // Fetch metrics
@@ -81,6 +83,31 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     }
   }, [activeTab]);
 
+  // Discover whether the renderer found a usable datetime column. The
+  // renderer publishes __trailaTimeAvailable after running. Poll for
+  // up to ~6s.
+  useEffect(() => {
+    let tries = 0;
+    const id = setInterval(() => {
+      const w = window as any;
+      if (typeof w.__trailaTimeAvailable === "boolean") {
+        setTimeAvailable(w.__trailaTimeAvailable);
+        clearInterval(id);
+      } else if (++tries > 60) {
+        clearInterval(id);
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [trip.id]);
+
+  // Push x-axis selection to the renderer
+  useEffect(() => {
+    const setXAxisFn = (window as any).__trailaSetXAxis as
+      | ((m: "distance" | "time") => void)
+      | undefined;
+    setXAxisFn?.(xAxis);
+  }, [xAxis]);
+
   return (
     <>
       <link
@@ -132,20 +159,42 @@ export function TripDashboard({ trip }: { trip: Trip }) {
               </div>
             </div>
 
-            {/* Tab strip */}
-            <div className={styles.tabs} role="tablist">
-              {PLOT_TABS.map((tab) => (
+            {/* Tab strip + x-axis selector */}
+            <div className={styles.tabsRow}>
+              <div className={styles.tabs} role="tablist">
+                {PLOT_TABS.map((tab) => (
+                  <button
+                    key={tab.canvasId}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === tab.canvasId}
+                    className={`${styles.tab} ${activeTab === tab.canvasId ? styles.tabActive : ""}`}
+                    onClick={() => setActiveTab(tab.canvasId)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.xAxisSelector}>
+                <span className={styles.xAxisLabel}>x-axis</span>
                 <button
-                  key={tab.canvasId}
                   type="button"
-                  role="tab"
-                  aria-selected={activeTab === tab.canvasId}
-                  className={`${styles.tab} ${activeTab === tab.canvasId ? styles.tabActive : ""}`}
-                  onClick={() => setActiveTab(tab.canvasId)}
+                  className={`${styles.xAxisBtn} ${xAxis === "distance" ? styles.xAxisBtnActive : ""}`}
+                  onClick={() => setXAxis("distance")}
+                  title="Distance (km)"
                 >
-                  {tab.label}
+                  Distance
                 </button>
-              ))}
+                <button
+                  type="button"
+                  className={`${styles.xAxisBtn} ${xAxis === "time" ? styles.xAxisBtnActive : ""}`}
+                  onClick={() => timeAvailable && setXAxis("time")}
+                  disabled={!timeAvailable}
+                  title={timeAvailable ? "Wall-clock time (UTC)" : "No datetime in this trip"}
+                >
+                  Time
+                </button>
+              </div>
             </div>
 
             {/* Chart panes — all mounted, only the active one is visible.

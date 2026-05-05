@@ -38,7 +38,7 @@ export async function GET(
     const { data, error } = await supabase
       .from("track_metrics")
       .select(
-        "seq, ts, lat, lon, altitude_m, speed_kmh, ax, ay, az, gx, gy, gz, acc_mag, gyro_mag, noise_db, extra",
+        "seq, ts, datetime, distance_m, lat, lon, altitude_m, speed_kmh, ax, ay, az, gx, gy, gz, acc_mag, gyro_mag, noise_db, extra",
       )
       .eq("trip_id", params.id)
       .order("seq", { ascending: true })
@@ -69,6 +69,8 @@ export async function GET(
   const typedColumns = [
     "seq",
     "ts",
+    "datetime",        // epoch ms (converted below)
+    "distance_m",
     "lat",
     "lon",
     "altitude_m",
@@ -86,9 +88,18 @@ export async function GET(
   const columns = [...typedColumns, ...extraList];
 
   const rows = allRows.map((r) => {
-    const out: (number | null)[] = typedColumns.map((c) =>
-      r[c] === undefined || r[c] === null ? null : Number(r[c]),
-    );
+    const out: (number | null)[] = typedColumns.map((c) => {
+      const v = r[c];
+      if (v === undefined || v === null) return null;
+      if (c === "datetime") {
+        // Postgres timestamptz comes back as ISO string. Convert to epoch
+        // ms so the client-side response shape stays uniformly numeric
+        // (Chart.js consumes epoch ms natively for linear time axes).
+        const t = Date.parse(v);
+        return Number.isFinite(t) ? t : null;
+      }
+      return Number(v);
+    });
     for (const k of extraList) {
       const v = r.extra?.[k];
       out.push(v === undefined || v === null ? null : Number(v));

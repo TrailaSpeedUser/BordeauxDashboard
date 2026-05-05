@@ -106,6 +106,12 @@ create table if not exists public.track_metrics (
   seq     integer not null,                       -- 0-based row index
   ts      bigint  not null,                       -- device monotonic, µs
 
+  -- Wall-clock time (interpolated from timesync upstream)
+  datetime timestamptz,
+
+  -- Cumulative travelled distance (m), trapezoidal integration upstream
+  distance_m double precision,
+
   -- GPS
   lat         double precision,
   lon         double precision,

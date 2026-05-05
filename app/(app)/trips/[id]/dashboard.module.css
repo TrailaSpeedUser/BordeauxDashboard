@@ -184,13 +184,65 @@
 }
 
 /* Tab strip under the map */
+.tabsRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px 0 14px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
 .tabs {
   display: flex;
   gap: 4px;
-  padding: 10px 14px 0 14px;
-  border-top: 1px solid var(--border);
   background: transparent;
   flex-wrap: wrap;
+}
+
+.xAxisSelector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+}
+
+.xAxisLabel {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+
+.xAxisBtn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.xAxisBtn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.xAxisBtnActive,
+.xAxisBtnActive:hover {
+  color: #1f1d1a;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.xAxisBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .tab {

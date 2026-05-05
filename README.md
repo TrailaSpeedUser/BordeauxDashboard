@@ -72,15 +72,17 @@ trips                       track_metrics
 id              uuid PK     trip_id       uuid FK
 owner_id        uuid        seq           int       (0-based row index)
 name            text        ts            bigint    (device µs)
-notes           text        lat, lon      double
-session         text        altitude_m    double
-recorded_on     date        speed_kmh     double
-ts_start_us     bigint      ax, ay, az    double
-ts_end_us       bigint      gx, gy, gz    double
-duration_s      double      acc_mag       double
-n_rows          int         gyro_mag      double
-metadata        jsonb       noise_db      double
-created_at      timestamptz extra         jsonb     (noise_band_*, etc.)
+notes           text        datetime      timestamptz  (UTC wall-clock)
+session         text        distance_m    double    (cumulative, m)
+recorded_on     date        lat, lon      double
+ts_start_us     bigint      altitude_m    double
+ts_end_us       bigint      speed_kmh     double
+duration_s      double      ax, ay, az    double
+n_rows          int         gx, gy, gz    double
+metadata        jsonb       acc_mag       double
+created_at      timestamptz gyro_mag      double
+                            noise_db      double
+                            extra         jsonb     (noise_band_*, etc.)
 ```
 
 The verbatim `metadata.json` is stored in `trips.metadata`. The
@@ -123,6 +125,7 @@ lib/
 middleware.ts               Auth gate, session cookie refresh
 supabase/
   migrations/0001_init.sql  Schema, RLS, role trigger
+  migrations/0002_add_datetime_distance.sql  (additive: datetime + distance_m)
   seed-admin.sql            Promote a user to admin
 ```
 
@@ -199,6 +202,10 @@ new-project parts.
    `trips`, and `track_metrics` tables, sets up Row Level Security
    policies, and installs the trigger that auto-creates a profile when
    a new auth user is created.
+
+   *If you have an existing deployment from before the `datetime` /
+   `distance_m` columns were added*, run `0002_add_datetime_distance.sql`
+   instead — it's additive and won't touch your existing data.
 6. From **Settings → API**, copy three values for later:
    - **Project URL**
    - **anon public key**

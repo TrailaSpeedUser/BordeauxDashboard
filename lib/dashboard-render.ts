@@ -78,15 +78,43 @@ function decimate<T>(arr: T[], maxPoints: number): T[] {
   return out;
 }
 
+/**
+ * Indices into the original array that decimate() picks. Use this to map
+ * a chart-data-point index back to its row in the underlying data — needed
+ * for the chart-hover → map-cursor sync.
+ */
+function decimationIndices(originalLength: number, maxPoints: number): number[] {
+  if (originalLength <= maxPoints) {
+    return Array.from({ length: originalLength }, (_, i) => i);
+  }
+  const step = originalLength / maxPoints;
+  const out: number[] = new Array(maxPoints);
+  for (let i = 0; i < maxPoints; i++) out[i] = Math.floor(i * step);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // 2.  PLOT REGISTRY
 // ---------------------------------------------------------------------------
 
+type XAxisMode = "distance" | "time";
+
 type ChartCtx = {
   view: DataView;
   trip: Trip;
-  distanceKm: number[];          // shared x-axis (km)
-  decimateTo: number;            // target sample count for charts
+  /** Distance in km — preferred x for visual analysis. */
+  distanceKm: number[];
+  /** Wall-clock time in epoch ms — null if datetime column absent. */
+  timeMs: number[] | null;
+  /** Which one is currently the chart x-axis. */
+  xAxisMode: XAxisMode;
+  decimateTo: number;
+  /**
+   * Parallel array to the decimated chart data: chart-index N corresponds
+   * to original row `originalIndices[N]`. Used to map chart hover events
+   * back to lat/lon for the map cursor marker.
+   */
+  originalIndices: number[];
 };
 
 type PlotSpec = {
@@ -106,6 +134,45 @@ const BAND_PALETTE = [
   "#cf6b6b",
 ];
 
+/** The current x array based on mode (km or epoch ms). */
+function activeX(ctx: ChartCtx): number[] {
+  if (ctx.xAxisMode === "time" && ctx.timeMs) return ctx.timeMs;
+  return ctx.distanceKm;
+}
+
+/** X-axis Chart.js config for the active mode. */
+function xAxisConfig(mode: XAxisMode): any {
+  if (mode === "time") {
+    return {
+      type: "linear",
+      ticks: {
+        color: "#a59c94",
+        font: { size: 10 },
+        callback: (v: number) => {
+          // v is epoch ms — show HH:MM
+          const d = new Date(v);
+          const hh = d.getUTCHours().toString().padStart(2, "0");
+          const mm = d.getUTCMinutes().toString().padStart(2, "0");
+          return `${hh}:${mm}`;
+        },
+      },
+      grid: { color: "rgba(255,255,255,0.05)" },
+      title: { display: true, text: "Time (UTC)", color: "#a59c94" },
+    };
+  }
+  return {
+    type: "linear",
+    ticks: { color: "#a59c94", font: { size: 10 } },
+    grid: { color: "rgba(255,255,255,0.05)" },
+    title: { display: true, text: "Distance (km)", color: "#a59c94" },
+  };
+}
+
+const Y_COMMON = {
+  ticks: { color: "#a59c94", font: { size: 10 } },
+  grid: { color: "rgba(255,255,255,0.05)" },
+};
+
 const CHART_COMMON: any = {
   responsive: true,
   maintainAspectRatio: false,
@@ -114,22 +181,29 @@ const CHART_COMMON: any = {
   normalized: true,
   plugins: {
     legend: { labels: { color: "#a59c94", font: { size: 10 }, boxWidth: 10 } },
-    tooltip: { mode: "index", intersect: false },
+    tooltip: {
+      mode: "index",
+      intersect: false,
+      callbacks: {
+        // Format the tooltip header by mode
+        title: (items: any[]) => {
+          if (!items.length) return "";
+          const mode = (window as any).__trailaXAxisMode as XAxisMode | undefined;
+          const x = items[0].parsed.x;
+          if (mode === "time") {
+            const d = new Date(x);
+            const hh = d.getUTCHours().toString().padStart(2, "0");
+            const mm = d.getUTCMinutes().toString().padStart(2, "0");
+            const ss = d.getUTCSeconds().toString().padStart(2, "0");
+            return `${hh}:${mm}:${ss} UTC`;
+          }
+          return `${x.toFixed(2)} km`;
+        },
+      },
+    },
     decimation: { enabled: true, algorithm: "min-max" },
   },
   interaction: { mode: "index", intersect: false },
-  scales: {
-    x: {
-      type: "linear",
-      ticks: { color: "#a59c94", font: { size: 10 } },
-      grid: { color: "rgba(255,255,255,0.05)" },
-      title: { display: true, text: "Distance (km)", color: "#a59c94" },
-    },
-    y: {
-      ticks: { color: "#a59c94", font: { size: 10 } },
-      grid: { color: "rgba(255,255,255,0.05)" },
-    },
-  },
 };
 
 const PLOT_REGISTRY: PlotSpec[] = [
@@ -137,12 +211,13 @@ const PLOT_REGISTRY: PlotSpec[] = [
   {
     canvasId: "chartSpeed",
     label: "Speed & altitude",
-    build: ({ view, distanceKm, decimateTo }) => {
+    build: (ctx) => {
+      const { view, decimateTo } = ctx;
       if (!view.has("speed_kmh")) return null;
       const speed = view.col("speed_kmh");
       const alt = view.col("altitude_m");
 
-      const xs = decimate(distanceKm, decimateTo);
+      const xs = decimate(activeX(ctx), decimateTo);
       const ds: any[] = [
         {
           label: "Speed (km/h)",
@@ -171,9 +246,9 @@ const PLOT_REGISTRY: PlotSpec[] = [
         options: {
           ...CHART_COMMON,
           scales: {
-            ...CHART_COMMON.scales,
-            y:  { ...CHART_COMMON.scales.y, position: "left",  title: { display: true, text: "km/h", color: "#5a9bd5" } },
-            y2: { ...CHART_COMMON.scales.y, position: "right", title: { display: true, text: "m",    color: "#c98a55" }, grid: { drawOnChartArea: false } },
+            x: xAxisConfig(ctx.xAxisMode),
+            y:  { ...Y_COMMON, position: "left",  title: { display: true, text: "km/h", color: "#5a9bd5" } },
+            y2: { ...Y_COMMON, position: "right", title: { display: true, text: "m",    color: "#c98a55" }, grid: { drawOnChartArea: false } },
           },
         },
       };
@@ -184,9 +259,10 @@ const PLOT_REGISTRY: PlotSpec[] = [
   {
     canvasId: "chartImu",
     label: "Acceleration",
-    build: ({ view, distanceKm, decimateTo }) => {
+    build: (ctx) => {
+      const { view, decimateTo } = ctx;
       const has = (c: string) => view.has(c);
-      const xs = decimate(distanceKm, decimateTo);
+      const xs = decimate(activeX(ctx), decimateTo);
       const ds: any[] = [];
       const make = (col: string, label: string, color: string, dash: number[], width: number) => {
         if (!has(col)) return;
@@ -212,8 +288,8 @@ const PLOT_REGISTRY: PlotSpec[] = [
         options: {
           ...CHART_COMMON,
           scales: {
-            ...CHART_COMMON.scales,
-            y: { ...CHART_COMMON.scales.y, title: { display: true, text: "Acceleration (raw)", color: "#a59c94" } },
+            x: xAxisConfig(ctx.xAxisMode),
+            y: { ...Y_COMMON, title: { display: true, text: "Acceleration (raw)", color: "#a59c94" } },
           },
         },
       };
@@ -224,8 +300,9 @@ const PLOT_REGISTRY: PlotSpec[] = [
   {
     canvasId: "chartNoise",
     label: "Noise",
-    build: ({ view, trip, distanceKm, decimateTo }) => {
-      const xs = decimate(distanceKm, decimateTo);
+    build: (ctx) => {
+      const { view, trip, decimateTo } = ctx;
+      const xs = decimate(activeX(ctx), decimateTo);
       const ds: any[] = [];
       if (view.has("noise_db")) {
         ds.push({
@@ -261,8 +338,8 @@ const PLOT_REGISTRY: PlotSpec[] = [
         options: {
           ...CHART_COMMON,
           scales: {
-            ...CHART_COMMON.scales,
-            y: { ...CHART_COMMON.scales.y, title: { display: true, text: "Noise (dBFS)", color: "#a59c94" } },
+            x: xAxisConfig(ctx.xAxisMode),
+            y: { ...Y_COMMON, title: { display: true, text: "Noise (dBFS)", color: "#a59c94" } },
           },
         },
       };
@@ -368,10 +445,33 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
     try { w.__trailaMap.remove(); } catch { /* noop */ }
     w.__trailaMap = null;
   }
+  // Clear cursor hook so chart hover from a previous render can't fire
+  // into a destroyed map.
+  w.__trailaSetCursor = null;
+  w.__trailaSetXAxis = null;
 
   const view = new DataView(data);
-  const distanceM = computeDistanceM(view);
-  const distanceKm = distanceM.map((d) => d / 1000);
+
+  // Distance: prefer the column from upstream (already integrated and
+  // calibrated). Fall back to speed integration for old uploads.
+  let distanceKm: number[];
+  if (view.has("distance_m")) {
+    const colVals = view.col("distance_m");
+    // If the whole column is NaN (old upload), fall back
+    const anyValid = colVals.some((v) => !isNaN(v));
+    distanceKm = anyValid
+      ? colVals.map((m) => (isNaN(m) ? NaN : m / 1000))
+      : computeDistanceM(view).map((d) => d / 1000);
+  } else {
+    distanceKm = computeDistanceM(view).map((d) => d / 1000);
+  }
+
+  // Wall-clock time (epoch ms) — null if column absent or all-null
+  let timeMs: number[] | null = null;
+  if (view.has("datetime")) {
+    const colVals = view.col("datetime");
+    if (colVals.some((v) => !isNaN(v))) timeMs = colVals;
+  }
 
   // ---- Map ----
   // @ts-ignore — Leaflet is loaded via <Script>
@@ -539,6 +639,33 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
         radius: 6, color: "#fff", fillColor: "#cf6b6b", fillOpacity: 1, weight: 2,
       }).bindTooltip("End").addTo(map);
 
+      // ── Chart-hover cursor marker ────────────────────────────────
+      // A single marker that tracks the user's chart hover position.
+      // Hidden by default (zero radius); chart's onHover positions and
+      // shows it, mouseleave hides it.
+      const cursorMarker = L.circleMarker([0, 0], {
+        radius: 0,
+        color: "#1f1d1a",
+        weight: 2,
+        fillColor: "#f5a45c",
+        fillOpacity: 1,
+        interactive: false,
+      }).addTo(map);
+      (window as any).__trailaSetCursor = (rowIdx: number | null) => {
+        if (rowIdx === null || rowIdx === undefined) {
+          cursorMarker.setRadius(0);
+          return;
+        }
+        const la = lat[rowIdx];
+        const lo2 = lon[rowIdx];
+        if (isNaN(la) || isNaN(lo2)) {
+          cursorMarker.setRadius(0);
+          return;
+        }
+        cursorMarker.setLatLng([la, lo2]);
+        cursorMarker.setRadius(8);
+      };
+
       // Initial overlay
       const initialBand =
         ACTIVE_OVERLAY.pickColumn(view) ?? allNoiseCols[allNoiseCols.length - 1] ?? "";
@@ -590,24 +717,116 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
   const Chart = (window as any).Chart;
   if (!Chart) return;
 
-  const ctx: ChartCtx = {
+  const decimateTo = 2500;
+  // Initial x-axis mode — distance is the default. Stash globally so
+  // tooltip callback can read it without closing over the ctx.
+  let xAxisMode: XAxisMode = "distance";
+  (window as any).__trailaXAxisMode = xAxisMode;
+  (window as any).__trailaTimeAvailable = timeMs !== null;
+
+  const buildCtx = (): ChartCtx => ({
     view,
     trip,
     distanceKm,
-    decimateTo: 2500,
+    timeMs,
+    xAxisMode,
+    decimateTo,
+    originalIndices: decimationIndices(distanceKm.length, decimateTo),
+  });
+
+  // ── Crosshair plugin ──────────────────────────────────────────────
+  // Draws a dashed vertical line at the active tooltip's x position.
+  // Reads `chart.tooltip._active` directly because that's the only
+  // mechanism Chart.js exposes for "where is the cursor right now."
+  const crosshairPlugin = {
+    id: "trailaCrosshair",
+    afterDraw: (chart: any) => {
+      const active = chart.tooltip?._active;
+      if (!active || active.length === 0) return;
+      const x = active[0].element?.x;
+      if (typeof x !== "number") return;
+      const { top, bottom } = chart.chartArea;
+      const c = chart.ctx;
+      c.save();
+      c.beginPath();
+      c.setLineDash([4, 4]);
+      c.lineWidth = 1;
+      c.strokeStyle = "rgba(241,236,228,0.55)";
+      c.moveTo(x, top);
+      c.lineTo(x, bottom);
+      c.stroke();
+      c.restore();
+    },
   };
 
-  // Registry of active chart instances by canvasId, for resize-on-tab-switch
-  const charts: Record<string, any> = {};
-  for (const spec of PLOT_REGISTRY) {
-    const el = document.getElementById(spec.canvasId) as HTMLCanvasElement | null;
-    if (!el) continue;
-    const cfg = spec.build(ctx);
-    if (!cfg) continue;
-    charts[spec.canvasId] = new Chart(el, cfg);
+  let chartCtx = buildCtx();
+
+  // ── Hover handler ─────────────────────────────────────────────────
+  // Maps a chart-data-point index back to an original row index and
+  // pushes it to the map cursor. When the cursor leaves the chart area
+  // (no active elements), hide the marker.
+  const onHover = (_evt: any, elements: any[], chart: any) => {
+    const setCursor = (window as any).__trailaSetCursor as
+      | ((rowIdx: number | null) => void)
+      | undefined;
+    if (!setCursor) return;
+    if (elements && elements.length > 0) {
+      const i = elements[0].index;
+      const orig = chartCtx.originalIndices[i];
+      if (typeof orig === "number") setCursor(orig);
+    } else {
+      setCursor(null);
+    }
+    // Force redraw so the crosshair line tracks the cursor live
+    chart.draw();
+  };
+
+  function buildAllCharts() {
+    // Destroy existing instances (used when the x-axis mode toggles)
+    const prev = (window as any).__trailaCharts as Record<string, any> | null;
+    if (prev) {
+      for (const c of Object.values(prev)) {
+        try { (c as any)?.destroy?.(); } catch { /* noop */ }
+      }
+    }
+
+    chartCtx = buildCtx();
+    const charts: Record<string, any> = {};
+    for (const spec of PLOT_REGISTRY) {
+      const el = document.getElementById(spec.canvasId) as HTMLCanvasElement | null;
+      if (!el) continue;
+      const cfg = spec.build(chartCtx);
+      if (!cfg) continue;
+      cfg.plugins = [...(cfg.plugins ?? []), crosshairPlugin];
+      cfg.options = { ...cfg.options, onHover };
+      charts[spec.canvasId] = new Chart(el, cfg);
+    }
+    (window as any).__trailaCharts = charts;
   }
-  // Stash globally so TripDashboard can find them when a tab is activated.
-  // Plain window-level handle keeps the renderer pure-JS-callable from the
-  // React side without needing to thread refs through.
-  (window as any).__trailaCharts = charts;
+
+  buildAllCharts();
+
+  // Hide cursor when leaving the chart container entirely (Chart.js's
+  // onHover only fires while *over* a data area, so we need a DOM-level
+  // mouseleave on the canvas to catch corner exits and gaps between
+  // datasets).
+  for (const spec of PLOT_REGISTRY) {
+    const el = document.getElementById(spec.canvasId);
+    if (!el) continue;
+    el.addEventListener("mouseleave", () => {
+      const setCursor = (window as any).__trailaSetCursor as
+        | ((rowIdx: number | null) => void)
+        | undefined;
+      setCursor?.(null);
+    });
+  }
+
+  // Expose x-axis switcher to the React side
+  (window as any).__trailaSetXAxis = (mode: XAxisMode) => {
+    if (mode === "time" && timeMs === null) return; // guard against bad input
+    if (mode === xAxisMode) return;
+    xAxisMode = mode;
+    (window as any).__trailaXAxisMode = mode;
+    buildAllCharts();
+  };
 }
