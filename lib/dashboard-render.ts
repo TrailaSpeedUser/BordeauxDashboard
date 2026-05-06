@@ -296,6 +296,49 @@ const PLOT_REGISTRY: PlotSpec[] = [
     },
   },
 
+  // ─── Gyroscope ─────────────────────────────────────────────────────────────
+  {
+    canvasId: "chartGyro",
+    label: "Gyroscope",
+    build: (ctx) => {
+      const { view, decimateTo } = ctx;
+      const has = (c: string) => view.has(c);
+      const xs = decimate(activeX(ctx), decimateTo);
+      const ds: any[] = [];
+      const make = (col: string, label: string, color: string, dash: number[], width: number) => {
+        if (!has(col)) return;
+        ds.push({
+          label,
+          data: decimate(view.col(col), decimateTo).map((y, i) => ({ x: xs[i], y })),
+          borderColor: color,
+          backgroundColor: color,
+          borderWidth: width,
+          borderDash: dash,
+          pointRadius: 0,
+        });
+      };
+      // Warmer palette than accel so the two charts feel distinct when
+      // the user toggles between them.
+      make("gx", "gx", "#e0925f", [4, 3], 0.9);
+      make("gy", "gy", "#a48ac6", [4, 3], 0.9);
+      make("gz", "gz", "#5a9bd5", [4, 3], 0.9);
+      make("gyro_mag", "|g|", "#f1ece4", [], 1.6);
+
+      if (ds.length === 0) return null;
+      return {
+        type: "line",
+        data: { datasets: ds },
+        options: {
+          ...CHART_COMMON,
+          scales: {
+            x: xAxisConfig(ctx.xAxisMode),
+            y: { ...Y_COMMON, title: { display: true, text: "Angular rate (raw)", color: "#a59c94" } },
+          },
+        },
+      };
+    },
+  },
+
   // ─── Noise (broadband + bands) ─────────────────────────────────────────────
   {
     canvasId: "chartNoise",
@@ -449,6 +492,12 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
   // into a destroyed map.
   w.__trailaSetCursor = null;
   w.__trailaSetXAxis = null;
+  w.__trailaUpdateOverlay = null;
+  w.__trailaBands = null;
+  w.__trailaInitialBand = null;
+  w.__trailaTimeAvailable = undefined;
+  w.__trailaXAxisMode = undefined;
+  w.__trailaTilesOk = false;
 
   const view = new DataView(data);
 

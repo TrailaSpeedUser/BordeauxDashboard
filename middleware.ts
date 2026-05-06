@@ -22,8 +22,18 @@ export async function middleware(req: NextRequest) {
     },
   );
 
-  // Touch the session so cookies refresh on each request
-  await supabase.auth.getUser();
+  // Single getUser() call serves two purposes: (1) refresh the session
+  // cookie if needed, (2) tell us whether the request is authenticated.
+  // Wrap in try/catch because getUser() throws an AuthApiError when no
+  // refresh token exists (first navigation, expired session, signed-out
+  // requests). That's expected, not a bug — just treat it as "no user".
+  let user: { id: string } | null = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    user = null;
+  }
 
   // Gate everything except /login and the auth API behind authentication
   const url = req.nextUrl.clone();
@@ -33,15 +43,10 @@ export async function middleware(req: NextRequest) {
     url.pathname.startsWith("/_next/") ||
     url.pathname === "/favicon.ico";
 
-  if (!isPublic) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      url.pathname = "/login";
-      url.searchParams.set("next", req.nextUrl.pathname);
-      return NextResponse.redirect(url);
-    }
+  if (!isPublic && !user) {
+    url.pathname = "/login";
+    url.searchParams.set("next", req.nextUrl.pathname);
+    return NextResponse.redirect(url);
   }
 
   return res;

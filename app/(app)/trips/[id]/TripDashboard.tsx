@@ -15,7 +15,15 @@ type Status =
 
 export function TripDashboard({ trip }: { trip: Trip }) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
-  const [libsReady, setLibsReady] = useState({ leaflet: false, chart: false });
+  // Initialize from window in case scripts loaded on a previous visit.
+  // <Script onLoad> only fires on the actual load event; if the user
+  // navigates away and back, the scripts are cached but onLoad won't
+  // re-fire, so we need to detect the already-loaded state ourselves.
+  const [libsReady, setLibsReady] = useState(() => {
+    if (typeof window === "undefined") return { leaflet: false, chart: false };
+    const w = window as any;
+    return { leaflet: !!w.L, chart: !!w.Chart };
+  });
   const [activeTab, setActiveTab] = useState(PLOT_TABS[0]?.canvasId ?? "");
   const [xAxis, setXAxis] = useState<"distance" | "time">("distance");
   const [timeAvailable, setTimeAvailable] = useState(false);
@@ -134,7 +142,7 @@ export function TripDashboard({ trip }: { trip: Trip }) {
           {/* ============= LEFT PANEL — metadata + future additions ============= */}
           <aside className={`${styles.panel} ${styles.left}`}>
             <MetadataPanel trip={trip} status={status} styles={styles} />
-            <MapControls styles={styles} />
+            <MapControls key={trip.id} styles={styles} />
             {/*
               Reserved for future controls / panels.
               Add new <section className={styles.section}> blocks below
