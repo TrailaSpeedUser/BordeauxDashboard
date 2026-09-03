@@ -126,6 +126,7 @@ middleware.ts               Auth gate, session cookie refresh
 supabase/
   migrations/0001_init.sql  Schema, RLS, role trigger
   migrations/0002_add_datetime_distance.sql  (additive: datetime + distance_m)
+  migrations/0003_aggregate_function.sql     (network heatmap function)
   seed-admin.sql            Promote a user to admin
 ```
 
@@ -205,11 +206,14 @@ new-project parts.
 
    *If you have an existing deployment from before the `datetime` /
    `distance_m` columns were added*, run `0002_add_datetime_distance.sql`
-   instead — it's additive and won't touch your existing data.
+   to add them. Then run `0003_aggregate_function.sql` to install the
+   network-heatmap aggregation function. Both are additive and won't
+   touch your existing data.
 6. From **Settings → API**, copy three values for later:
    - **Project URL**
    - **anon public key**
    - **service_role secret** (treat this like a password)
+
 
 ### 2. Push the code to GitHub
 

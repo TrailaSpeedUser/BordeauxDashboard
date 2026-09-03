@@ -16,6 +16,7 @@ export function AppNav({ isAdmin }: { isAdmin: boolean }) {
   return (
     <nav>
       {link("/trips", "Trips")}
+      {link("/network", "Network")}
       {isAdmin && link("/upload", "Upload")}
     </nav>
   );
