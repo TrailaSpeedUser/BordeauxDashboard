@@ -15,8 +15,9 @@ export default async function AppLayout({
     <>
       <header className="app-header">
         <Link href="/trips" className="brand" style={{ color: "inherit" }}>
-          <span className="dot" />
-          <span>Traila — Bordeaux</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/Traila_logo_color-400x48.png" alt="Traila" className="logo" />
+          <span>Bordeaux</span>
         </Link>
 
         <AppNav isAdmin={isAdmin} />
