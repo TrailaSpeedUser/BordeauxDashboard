@@ -60,6 +60,20 @@ button, select, input {
   display: block;
 }
 
+.app-header .brand .beta {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  background: rgba(237, 107, 65, 0.14);
+  border: 1px solid rgba(237, 107, 65, 0.35);
+  border-radius: 999px;
+  padding: 2px 7px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
 .app-header nav {
   display: flex;
   gap: 18px;
