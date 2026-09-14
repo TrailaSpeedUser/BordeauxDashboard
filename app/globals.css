@@ -54,12 +54,10 @@ button, select, input {
   letter-spacing: 0.4px;
 }
 
-.app-header .brand .dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 10px rgba(237, 107, 65, 0.6);
+.app-header .brand .logo {
+  height: 24px;
+  width: auto;
+  display: block;
 }
 
 .app-header nav {
