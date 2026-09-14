@@ -60,6 +60,17 @@ button, select, input {
   display: block;
 }
 
+.app-header .brand .wordmark {
+  /* The logo PNG is ink edge-to-edge on its 48px canvas, so at
+     height:24px the "TRAILA" capitals are exactly 24px tall. Cap
+     height is ~0.70em in this font stack, so 24 / 0.70 = 34px makes
+     the capitals match. line-height:1 keeps the 34px line box inside
+     the header's 34px content area (62px minus 14px padding). */
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+}
+
 .app-header .brand .beta {
   font-size: 10px;
   font-weight: 700;
