@@ -7,6 +7,7 @@ import { renderDashboard, PLOT_TABS } from "@/lib/dashboard-render";
 import type { Trip, MetricsResponse } from "@/lib/types";
 import { MetadataPanel } from "@/components/MetadataPanel";
 import { MapControls } from "@/components/MapControls";
+import { PaneSplitter } from "@/components/PaneSplitter";
 
 type Status =
   | { kind: "loading" }
@@ -36,6 +37,9 @@ export function TripDashboard({ trip }: { trip: Trip }) {
   const [mapReady, setMapReady] = useState(false);
   const [mapBearing, setMapBearing] = useState<0 | -90>(0);
   const renderedRef = useRef(false);
+  // The splitter writes --chart-h here rather than lifting the size
+  // into state, which would re-render and rebuild the Leaflet map.
+  const rightPanelRef = useRef<HTMLElement>(null);
 
   // Fetch metrics
   useEffect(() => {
@@ -181,7 +185,7 @@ export function TripDashboard({ trip }: { trip: Trip }) {
           </aside>
 
           {/* ============= RIGHT PANEL — map + tabbed plots ============= */}
-          <section className={`${styles.panel} ${styles.right}`}>
+          <section ref={rightPanelRef} className={`${styles.panel} ${styles.right}`}>
             <div className={styles.mapwrap}>
               <div
                 id="map"
@@ -221,6 +225,8 @@ export function TripDashboard({ trip }: { trip: Trip }) {
                 <div id="legendNote" className={styles.small} style={{ marginTop: 4 }} />
               </div>
             </div>
+
+            <PaneSplitter panelRef={rightPanelRef} styles={styles} />
 
             {/* Tab strip + x-axis selector */}
             <div className={styles.tabsRow}>
