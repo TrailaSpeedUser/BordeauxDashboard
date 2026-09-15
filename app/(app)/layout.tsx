@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getCurrentUser, getUserRole } from "@/lib/auth";
 import { AppNav } from "@/components/AppNav";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default async function AppLayout({
   children,
@@ -28,6 +29,7 @@ export default async function AppLayout({
           <form action="/api/auth/logout" method="post">
             <button type="submit">Sign out</button>
           </form>
+          <ThemeToggle />
         </div>
       </header>
       {children}
