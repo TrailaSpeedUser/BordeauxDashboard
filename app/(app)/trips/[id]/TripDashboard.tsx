@@ -24,6 +24,13 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     const w = window as any;
     return { leaflet: !!w.L, chart: !!w.Chart };
   });
+  // leaflet-rotate patches Leaflet's core prototypes, so it MUST execute
+  // after leaflet.js. Two sibling <Script strategy="afterInteractive">
+  // tags are not guaranteed to run in order, so gate the plugin tag on
+  // the core having loaded rather than rendering them side by side.
+  const [leafletCore, setLeafletCore] = useState(
+    () => typeof window !== "undefined" && !!(window as any).L,
+  );
   const [activeTab, setActiveTab] = useState(PLOT_TABS[0]?.canvasId ?? "");
   const [xAxis, setXAxis] = useState<"distance" | "time">("distance");
   const [timeAvailable, setTimeAvailable] = useState(false);
@@ -128,9 +135,21 @@ export function TripDashboard({ trip }: { trip: Trip }) {
         src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossOrigin=""
-        onLoad={() => setLibsReady((s) => ({ ...s, leaflet: true }))}
+        onLoad={() => setLeafletCore(true)}
         strategy="afterInteractive"
       />
+      {leafletCore && (
+        <Script
+          src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"
+          integrity="sha256-Ta4E5oRGbcJDRqmfp6qbzK7uDvaQyR0yDOGP6Bi1Ng8="
+          crossOrigin=""
+          strategy="afterInteractive"
+          // Either way the map renders; on error it simply has no rotate
+          // control. A CDN hiccup should not cost the whole dashboard.
+          onLoad={() => setLibsReady((s) => ({ ...s, leaflet: true }))}
+          onError={() => setLibsReady((s) => ({ ...s, leaflet: true }))}
+        />
+      )}
       <Script
         src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
         onLoad={() => setLibsReady((s) => ({ ...s, chart: true }))}

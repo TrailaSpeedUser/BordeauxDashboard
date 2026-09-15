@@ -432,6 +432,80 @@ const ACTIVE_OVERLAY: MapOverlay = {
   },
 };
 
+/**
+ * Stepped rotate buttons for the map (requires leaflet-rotate).
+ *
+ * Three stacked buttons in a standard .leaflet-bar under the zoom
+ * control: rotate CCW, reset-to-north (doubles as a bearing readout),
+ * rotate CW. Shift-drag and two-finger touch rotation are enabled at
+ * map-init, so this listens to the plugin's `rotate` event to keep the
+ * readout honest when the user rotates by gesture instead.
+ *
+ * No cleanup needed: the renderer calls map.remove() on re-init, which
+ * tears down controls and their listeners with it.
+ */
+const ROTATE_STEP_DEG = 15;
+
+function addRotateControl(L: any, map: any) {
+  const RotateControl = L.Control.extend({
+    options: { position: "topleft" },
+
+    onAdd(m: any) {
+      const bar = L.DomUtil.create("div", "leaflet-bar");
+      let northBtn: HTMLAnchorElement | null = null;
+
+      const sync = () => {
+        if (!northBtn) return;
+        // getBearing() is the plugin's normalized 0-360 value.
+        const deg = Math.round(m.getBearing()) % 360;
+        northBtn.textContent = deg === 0 ? "N" : `${deg}°`;
+        northBtn.style.fontSize = deg === 0 ? "" : "10px";
+        northBtn.title = deg === 0 ? "Facing north" : "Reset to north";
+      };
+
+      const apply = (deg: number) => {
+        m.setBearing(deg);
+        // Persist so a re-render (band change, tab switch) keeps the view.
+        (window as any).__trailaBearing = m.getBearing();
+        sync();
+      };
+
+      const mk = (label: string, title: string, onClick: () => void) => {
+        const a: HTMLAnchorElement = L.DomUtil.create("a", "", bar);
+        a.href = "#";
+        a.title = title;
+        a.textContent = label;
+        a.setAttribute("role", "button");
+        a.setAttribute("aria-label", title);
+        L.DomEvent.on(a, "click", L.DomEvent.stop).on(a, "click", onClick);
+        // Leaflet's bar styles assume one control per bar; stop the map
+        // from panning when a click lands on the button.
+        L.DomEvent.disableClickPropagation(a);
+        return a;
+      };
+
+      mk("⟲", `Rotate ${ROTATE_STEP_DEG}° counter-clockwise`, () =>
+        apply(m.getBearing() - ROTATE_STEP_DEG),
+      );
+      northBtn = mk("N", "Reset to north", () => apply(0));
+      mk("⟳", `Rotate ${ROTATE_STEP_DEG}° clockwise`, () =>
+        apply(m.getBearing() + ROTATE_STEP_DEG),
+      );
+
+      // Shift-drag / two-finger rotate bypass apply(), so mirror those too.
+      m.on("rotate", () => {
+        (window as any).__trailaBearing = m.getBearing();
+        sync();
+      });
+      sync();
+
+      return bar;
+    },
+  });
+
+  map.addControl(new RotateControl());
+}
+
 function colormapJet(t: number): string {
   // 0..1 → blue → green → yellow → orange → red
   const stops: [number, [number, number, number]][] = [
@@ -538,8 +612,32 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
         lat[validIdx[Math.floor(validIdx.length / 2)]],
         lon[validIdx[Math.floor(validIdx.length / 2)]],
       ];
-      const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(center, 15);
+      // leaflet-rotate (loaded after leaflet.js in TripDashboard) patches
+      // L.Map with setBearing/getBearing. Feature-detect rather than
+      // assume: if the CDN failed, the map still works, just north-up.
+      const rotatable = typeof L.Map.prototype.setBearing === "function";
+      // Bearing survives the teardown/rebuild at the top of this function,
+      // same as __trailaBands.
+      const startBearing =
+        typeof (window as any).__trailaBearing === "number"
+          ? (window as any).__trailaBearing
+          : 0;
+
+      const map = L.map("map", {
+        zoomControl: true,
+        attributionControl: false,
+        // Without `rotate: true` the plugin's setBearing() silently no-ops.
+        rotate: rotatable,
+        bearing: startBearing,
+        // The plugin's stock control is a drag-compass; we add stepped
+        // buttons below instead.
+        rotateControl: false,
+        touchRotate: rotatable,
+        shiftKeyRotate: rotatable,
+      }).setView(center, 15);
       (window as any).__trailaMap = map;
+
+      if (rotatable) addRotateControl(L, map);
       const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
         attribution: "© OpenStreetMap",
