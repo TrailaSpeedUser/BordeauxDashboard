@@ -142,10 +142,15 @@
 
 .mapwrap {
   position: relative;
-  /* Fixed height instead of flex — deterministic, never starts at 0 */
-  height: clamp(280px, 50vh, 600px);
+  /* The map is the elastic element: it absorbs whatever height is left
+     after the capped chart strip below. On a tall/rotated screen the
+     extra pixels go here rather than stretching the plot. min-height
+     keeps the container non-zero at first paint, which is what Leaflet
+     needs on init; the ResizeObserver in dashboard-render.ts calls
+     invalidateSize() as it grows. */
+  flex: 1 1 auto;
+  min-height: 280px;
   overflow: hidden;
-  flex: 0 0 auto;
 }
 
 /* The #map div sets its own width/height inline (see TripDashboard.tsx).
@@ -274,8 +279,11 @@
 
 /* Single chart pane that swaps based on active tab */
 .chartPaneWrap {
-  flex: 1 1 45%;
-  min-height: 240px;
+  /* Capped, not elastic. A single line plot past ~380px tall is mostly
+     empty space — extra height belongs to the map. border-box means this
+     includes the padding below. */
+  flex: 0 0 auto;
+  height: clamp(240px, 28vh, 380px);
   padding: 0 14px 14px;
   display: flex;
   flex-direction: column;
