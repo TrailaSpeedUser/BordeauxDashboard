@@ -7,6 +7,7 @@ import { renderDashboard, PLOT_TABS } from "@/lib/dashboard-render";
 import type { Trip, MetricsResponse } from "@/lib/types";
 import { MetadataPanel } from "@/components/MetadataPanel";
 import { MapControls } from "@/components/MapControls";
+import { PaneSplitter } from "@/components/PaneSplitter";
 
 type Status =
   | { kind: "loading" }
