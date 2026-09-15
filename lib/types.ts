@@ -16,4 +16,7 @@ export type Trip = {
 export type MetricsResponse = {
   columns: string[];
   rows: (number | null)[][];
+  /** Source rows before optional visualization sampling. */
+  totalRows?: number;
+  sampled?: boolean;
 };

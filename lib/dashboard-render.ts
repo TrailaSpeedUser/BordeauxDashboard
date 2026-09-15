@@ -30,6 +30,7 @@ import type { MetricsResponse, Trip } from "./types";
 /** Wraps a column-oriented response with cheap accessors. */
 class DataView {
   private idx: Record<string, number>;
+  private cache = new Map<string, number[]>();
   constructor(public res: MetricsResponse) {
     this.idx = {};
     res.columns.forEach((c, i) => (this.idx[c] = i));
@@ -39,12 +40,18 @@ class DataView {
   }
   /** Returns NaN for missing column — callers can filter or pass through. */
   col(col: string): number[] {
+    const cached = this.cache.get(col);
+    if (cached) return cached;
+
     const i = this.idx[col];
-    if (i === undefined) return new Array(this.res.rows.length).fill(NaN);
-    return this.res.rows.map((r) => {
-      const v = r[i];
-      return v === null || v === undefined ? NaN : v;
-    });
+    const values = i === undefined
+      ? new Array(this.res.rows.length).fill(NaN)
+      : this.res.rows.map((r) => {
+          const v = r[i];
+          return v === null || v === undefined ? NaN : v;
+        });
+    this.cache.set(col, values);
+    return values;
   }
   /** All column names matching a prefix, in declared order. */
   colsWithPrefix(prefix: string): string[] {
@@ -90,6 +97,21 @@ function decimationIndices(originalLength: number, maxPoints: number): number[] 
   const step = originalLength / maxPoints;
   const out: number[] = new Array(maxPoints);
   for (let i = 0; i < maxPoints; i++) out[i] = Math.floor(i * step);
+  return out;
+}
+
+/**
+ * Uniformly sample an existing list of row indices while preserving both
+ * endpoints. The full dataset stays available for charts and cursor lookup;
+ * this only bounds the number of interactive objects drawn on the map.
+ */
+function sampleIndices(indices: number[], maxPoints: number): number[] {
+  if (indices.length <= maxPoints) return indices;
+  const out = new Array<number>(maxPoints);
+  const scale = (indices.length - 1) / (maxPoints - 1);
+  for (let i = 0; i < maxPoints; i++) {
+    out[i] = indices[Math.round(i * scale)];
+  }
   return out;
 }
 
@@ -456,11 +478,10 @@ function colormapJet(t: number): string {
   return "rgb(195,59,59)";
 }
 
-function percentile(values: number[], p: number): number {
-  const cleaned = values.filter((v) => !isNaN(v)).sort((a, b) => a - b);
-  if (cleaned.length === 0) return NaN;
-  const idx = Math.min(cleaned.length - 1, Math.max(0, Math.floor(p * (cleaned.length - 1))));
-  return cleaned[idx];
+function percentileFromSorted(sorted: number[], p: number): number {
+  if (sorted.length === 0) return NaN;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))));
+  return sorted[idx];
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +509,14 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
     try { w.__trailaMap.remove(); } catch { /* noop */ }
     w.__trailaMap = null;
   }
+  if (w.__trailaMapResizeObserver) {
+    try { w.__trailaMapResizeObserver.disconnect(); } catch { /* noop */ }
+    w.__trailaMapResizeObserver = null;
+  }
+  if (w.__trailaOverlayFrame !== undefined && w.__trailaOverlayFrame !== null) {
+    cancelAnimationFrame(w.__trailaOverlayFrame);
+    w.__trailaOverlayFrame = null;
+  }
   // Clear cursor hook so chart hover from a previous render can't fire
   // into a destroyed map.
   w.__trailaSetCursor = null;
@@ -499,6 +528,7 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
   w.__trailaTimeAvailable = undefined;
   w.__trailaXAxisMode = undefined;
   w.__trailaTilesOk = false;
+  w.__trailaOverlayFrame = null;
 
   const view = new DataView(data);
 
@@ -527,14 +557,26 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
   // @ts-ignore — Leaflet is loaded via <Script>
   const L = (window as any).L;
   if (L) {
+    try {
     const lat = view.col("lat");
     const lon = view.col("lon");
     const validIdx: number[] = [];
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLon = Infinity;
+    let maxLon = -Infinity;
     for (let i = 0; i < lat.length; i++) {
-      if (!isNaN(lat[i]) && !isNaN(lon[i])) validIdx.push(i);
+      if (!isNaN(lat[i]) && !isNaN(lon[i])) {
+        validIdx.push(i);
+        minLat = Math.min(minLat, lat[i]);
+        maxLat = Math.max(maxLat, lat[i]);
+        minLon = Math.min(minLon, lon[i]);
+        maxLon = Math.max(maxLon, lon[i]);
+      }
     }
 
     if (validIdx.length > 0) {
+      const mapIdx = sampleIndices(validIdx, 6000);
       const center: [number, number] = [
         lat[validIdx[Math.floor(validIdx.length / 2)]],
         lon[validIdx[Math.floor(validIdx.length / 2)]],
@@ -588,8 +630,9 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
       const allNoiseCols = (view.has("noise_db") ? ["noise_db"] : []).concat(noiseCols);
       const sortedByCol: Record<string, number[]> = {};
       for (const c of allNoiseCols) {
-        sortedByCol[c] = view
-          .col(c)
+        const values = view.col(c);
+        sortedByCol[c] = mapIdx
+          .map((i) => values[i])
           .filter((v) => !isNaN(v))
           .sort((a, b) => a - b);
       }
@@ -619,7 +662,7 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
 
         if (!view.has(bandColumn)) {
           // Nothing to color by — fall back to a plain track
-          const pts = validIdx.map((i): [number, number] => [lat[i], lon[i]]);
+          const pts = mapIdx.map((i): [number, number] => [lat[i], lon[i]]);
           L.polyline(pts, { color: "#ed6b41", weight: 3, opacity: 0.85 })
             .addTo(overlayLayer);
           return;
@@ -627,8 +670,8 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
 
         const vals = view.col(bandColumn);
         const sortedAsc = sortedByCol[bandColumn] ?? [];
-        const lo = percentile(vals, 0.05);
-        const hi = percentile(vals, 0.95);
+        const lo = percentileFromSorted(sortedAsc, 0.05);
+        const hi = percentileFromSorted(sortedAsc, 0.95);
         const range = hi - lo || 1;
 
         // Pretty band name for tooltips/legend
@@ -643,41 +686,59 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
             ? `${colDef.f_low_hz}–${colDef.f_high_hz} Hz`
             : "";
 
-        // Draw one segment per consecutive valid pair.
-        // Below-threshold segments get faded opacity rather than hidden,
-        // so the user keeps geographic context.
-        for (let k = 1; k < validIdx.length; k++) {
-          const a = validIdx[k - 1];
-          const b = validIdx[k];
+        // Group segments into a small number of color/threshold layers. A
+        // separate Leaflet layer per sample becomes expensive and interacts
+        // poorly with map rotation; 24 color steps keep the gradient smooth
+        // while reducing thousands of layers to at most 48.
+        const COLOR_STEPS = 24;
+        const segmentGroups = new Map<
+          string,
+          {
+            segments: Array<Array<[number, number]>>;
+            color: string;
+            weight: number;
+            opacity: number;
+          }
+        >();
+
+        for (let k = 1; k < mapIdx.length; k++) {
+          const a = mapIdx[k - 1];
+          const b = mapIdx[k];
           const v = (vals[a] + vals[b]) / 2;
           const t = isNaN(v) ? 0 : (v - lo) / range;
           const rank = rankIn(sortedAsc, v);
           const aboveThreshold = rank >= percentileFloor;
           const opacity = aboveThreshold ? 0.9 : 0.18;
           const weight = aboveThreshold ? 5 : 3;
+          const normalized = Math.max(0, Math.min(1, t));
+          const colorStep = Math.round(normalized * (COLOR_STEPS - 1));
+          const key = `${aboveThreshold ? "high" : "low"}:${colorStep}`;
+          let group = segmentGroups.get(key);
+          if (!group) {
+            group = {
+              segments: [],
+              color: colormapJet(colorStep / (COLOR_STEPS - 1)),
+              weight,
+              opacity,
+            };
+            segmentGroups.set(key, group);
+          }
+          group.segments.push([
+            [lat[a], lon[a]],
+            [lat[b], lon[b]],
+          ]);
+        }
 
-          const seg = L.polyline(
-            [
-              [lat[a], lon[a]],
-              [lat[b], lon[b]],
-            ],
-            { color: colormapJet(t), weight, opacity },
-          );
-
-          // Hover tooltip — built lazily via bindTooltip with `sticky: true`
-          // so it follows the cursor along the line.
-          const valStr = isNaN(v) ? "—" : v.toFixed(1);
-          const rankStr = isNaN(v) ? "" : `top ${((1 - rank) * 100).toFixed(0)}%`;
-          seg.bindTooltip(
-            `<div style="font-size:11px;line-height:1.4">
-               <strong>${niceName}</strong>
-               ${freqRange ? `<span style="opacity:.7"> ${freqRange}</span>` : ""}
-               <br>${valStr} dBFS
-               ${rankStr ? `<span style="opacity:.7"> · ${rankStr}</span>` : ""}
-             </div>`,
-            { sticky: true, direction: "top", opacity: 0.95 },
-          );
-          seg.addTo(overlayLayer);
+        const orderedGroups = Array.from(segmentGroups.values()).sort(
+          (a, b) => a.weight - b.weight,
+        );
+        for (const group of orderedGroups) {
+          L.polyline(group.segments, {
+            color: group.color,
+            weight: group.weight,
+            opacity: group.opacity,
+            interactive: false,
+          }).addTo(overlayLayer);
         }
 
         // Legend
@@ -758,13 +819,24 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
               : "";
         return { column: c, name, range };
       });
+      let pendingBand = initialBand;
+      let pendingPercentile = 0;
       (window as any).__trailaUpdateOverlay = (band: string, percentileFloor: number) => {
-        applyOverlay(band, percentileFloor);
+        pendingBand = band;
+        pendingPercentile = percentileFloor;
+        if ((window as any).__trailaOverlayFrame !== null) return;
+        (window as any).__trailaOverlayFrame = requestAnimationFrame(() => {
+          (window as any).__trailaOverlayFrame = null;
+          applyOverlay(pendingBand, pendingPercentile);
+        });
       };
       (window as any).__trailaInitialBand = initialBand;
 
       // Fit bounds
-      const bounds = L.latLngBounds(validIdx.map((i: number) => [lat[i], lon[i]]));
+      const bounds = L.latLngBounds([
+        [minLat, minLon],
+        [maxLat, maxLon],
+      ]);
       map.fitBounds(bounds, { padding: [20, 20] });
 
       // Sizing settle (see earlier hydration discussion)
@@ -778,7 +850,18 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
         );
         const ro = new ResizeObserver(() => map.invalidateSize());
         ro.observe(mapEl);
+        (window as any).__trailaMapResizeObserver = ro;
       }
+    }
+    } catch (error) {
+      // A map/plugin failure must not prevent the independent Chart.js data
+      // views from rendering below.
+      console.error("[map] render failed:", error);
+      if (w.__trailaMap) {
+        try { w.__trailaMap.remove(); } catch { /* noop */ }
+        w.__trailaMap = null;
+      }
+      w.__trailaSetMapBearing = null;
     }
   }
 
@@ -883,12 +966,12 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
   for (const spec of PLOT_REGISTRY) {
     const el = document.getElementById(spec.canvasId);
     if (!el) continue;
-    el.addEventListener("mouseleave", () => {
+    el.onmouseleave = () => {
       const setCursor = (window as any).__trailaSetCursor as
         | ((rowIdx: number | null) => void)
         | undefined;
       setCursor?.(null);
-    });
+    };
   }
 
   // Expose x-axis switcher to the React side
