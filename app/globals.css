@@ -13,6 +13,35 @@
   --warn: #e0b86b;
   --bad: #d96b6b;
   --shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  --header-from: #2a2724;
+  --header-to: #1f1d1a;
+  --danger-text: var(--danger-text);
+  --ok-text: var(--ok-text);
+}
+
+
+/* Light theme. Applied by the inline script in app/layout.tsx and
+   toggled by components/ThemeToggle.tsx. Only the custom properties
+   are redefined — every rule below reads through them. */
+[data-theme="light"] {
+  --bg: #f7f4ef;
+  --bg2: #ffffff;
+  --panel: #ffffff;
+  --panel2: #f0ece5;
+  --border: #ddd6cb;
+  --border-strong: #bfb5a8;
+  --text: #24211d;
+  --muted: #6b625a;
+  --accent: #d2542c;
+  --accent-2: #a95515;
+  --good: #2e7d51;
+  --warn: #8a6a1f;
+  --bad: #b3392f;
+  --shadow: 0 12px 28px rgba(60, 50, 40, 0.14);
+  --header-from: #ffffff;
+  --header-to: #f2eee7;
+  --danger-text: #8c2f28;
+  --ok-text: #1f6b45;
 }
 
 * { box-sizing: border-box; }
@@ -41,7 +70,7 @@ button, select, input {
   align-items: center;
   justify-content: space-between;
   padding: 14px 22px;
-  background: linear-gradient(180deg, #2a2724, #1f1d1a);
+  background: linear-gradient(180deg, var(--header-from), var(--header-to));
   border-bottom: 1px solid var(--border);
   height: 62px;
 }
@@ -58,6 +87,31 @@ button, select, input {
   height: 24px;
   width: auto;
   display: block;
+}
+
+.app-header .brand .wordmark {
+  /* The logo PNG is ink edge-to-edge on its 48px canvas, so at
+     height:24px the "TRAILA" capitals are exactly 24px tall. Cap
+     height is ~0.70em in this font stack, so 24 / 0.70 = 34px makes
+     the capitals match. line-height:1 keeps the 34px line box inside
+     the header's 34px content area (62px minus 14px padding). */
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+}
+
+.app-header .brand .beta {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  background: rgba(237, 107, 65, 0.14);
+  border: 1px solid rgba(237, 107, 65, 0.35);
+  border-radius: 999px;
+  padding: 2px 7px;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .app-header nav {
@@ -97,6 +151,29 @@ button, select, input {
 }
 
 .app-header .user form button:hover { color: var(--text); border-color: var(--border-strong); }
+
+.app-header .user .theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.app-header .user .theme-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* Swap the glyph off the theme attribute rather than in React, so the
+   right icon is painted on the first frame. The sun shows while dark
+   (clicking it goes light) and the moon while light. */
+.theme-toggle .icon-when-light { display: none; }
+[data-theme="light"] .theme-toggle .icon-when-dark { display: none; }
+[data-theme="light"] .theme-toggle .icon-when-light { display: inline; }
 
 .container {
   max-width: 1200px;
@@ -170,7 +247,7 @@ h1 { font-size: 22px; margin: 0 0 16px 0; }
 .trip-card-delete:hover {
   background: rgba(217, 107, 107, 0.15);
   border-color: rgba(217, 107, 107, 0.45);
-  color: #f0c4c4;
+  color: var(--danger-text);
 }
 
 .trip-card-delete:disabled {
@@ -221,13 +298,13 @@ h1 { font-size: 22px; margin: 0 0 16px 0; }
 /* Danger button variant for destructive bulk actions */
 .btn.danger {
   background: rgba(217, 107, 107, 0.18);
-  color: #f0c4c4;
+  color: var(--danger-text);
   border: 1px solid rgba(217, 107, 107, 0.55);
 }
 
 .btn.danger:hover {
   background: rgba(217, 107, 107, 0.32);
-  color: #f0c4c4;
+  color: var(--danger-text);
 }
 
 .btn.danger:disabled {
@@ -267,5 +344,5 @@ h1 { font-size: 22px; margin: 0 0 16px 0; }
   margin-bottom: 14px;
   border: 1px solid;
 }
-.flash.error  { background: rgba(217, 107, 107, 0.10); border-color: rgba(217, 107, 107, 0.45); color: #f0c4c4; }
-.flash.ok     { background: rgba(108, 185, 138, 0.10); border-color: rgba(108, 185, 138, 0.45); color: #cbe9d7; }
+.flash.error  { background: rgba(217, 107, 107, 0.10); border-color: rgba(217, 107, 107, 0.45); color: var(--danger-text); }
+.flash.ok     { background: rgba(108, 185, 138, 0.10); border-color: rgba(108, 185, 138, 0.45); color: var(--ok-text); }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getCurrentUser, getUserRole } from "@/lib/auth";
 import { AppNav } from "@/components/AppNav";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default async function AppLayout({
   children,
@@ -17,7 +18,8 @@ export default async function AppLayout({
         <Link href="/trips" className="brand" style={{ color: "inherit" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/Traila_logo_color-400x48.png" alt="Traila" className="logo" />
-          <span>Bordeaux</span>
+          <span className="wordmark">SoundTrack</span>
+          <span className="beta">Beta</span>
         </Link>
 
         <AppNav isAdmin={isAdmin} />
@@ -27,6 +29,7 @@ export default async function AppLayout({
           <form action="/api/auth/logout" method="post">
             <button type="submit">Sign out</button>
           </form>
+          <ThemeToggle />
         </div>
       </header>
       {children}

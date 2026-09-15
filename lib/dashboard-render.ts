@@ -493,6 +493,7 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
   w.__trailaSetCursor = null;
   w.__trailaSetXAxis = null;
   w.__trailaUpdateOverlay = null;
+  w.__trailaSetMapBearing = null;
   w.__trailaBands = null;
   w.__trailaInitialBand = null;
   w.__trailaTimeAvailable = undefined;
@@ -538,13 +539,33 @@ export function renderDashboard(data: MetricsResponse, trip: Trip) {
         lat[validIdx[Math.floor(validIdx.length / 2)]],
         lon[validIdx[Math.floor(validIdx.length / 2)]],
       ];
-      const map = L.map("map", { zoomControl: true, attributionControl: false }).setView(center, 15);
+      const map = L.map("map", {
+        zoomControl: true,
+        attributionControl: false,
+        rotate: true,
+        bearing: 0,
+        dragRotate: false,
+        shiftKeyRotate: false,
+        touchRotate: false,
+        rotateControl: false,
+        preventPageGestures: false,
+      }).setView(center, 15);
       (window as any).__trailaMap = map;
-      const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "© OpenStreetMap",
-        crossOrigin: true,
-      });
+      (window as any).__trailaSetMapBearing = (degrees: number) => {
+        map.setBearing(degrees);
+      };
+      // Label-free neutral basemap: geographic context remains visible when
+      // rotated, without city/road/river names tilting with the map.
+      const tiles = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        {
+          maxNativeZoom: 16,
+          maxZoom: 19,
+          opacity: 0.58,
+          attribution: "Tiles © Esri",
+          crossOrigin: true,
+        },
+      );
       tiles.on("tileerror", (e: any) => {
         console.warn("[map] tile load error:", e?.tile?.src ?? e);
       });

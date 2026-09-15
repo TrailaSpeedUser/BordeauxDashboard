@@ -142,10 +142,94 @@
 
 .mapwrap {
   position: relative;
-  /* Fixed height instead of flex — deterministic, never starts at 0 */
-  height: clamp(280px, 50vh, 600px);
+  /* The map is the elastic element: it absorbs whatever height is left
+     after the capped chart strip below. On a tall/rotated screen the
+     extra pixels go here rather than stretching the plot. min-height
+     keeps the container non-zero at first paint, which is what Leaflet
+     needs on init; the ResizeObserver in dashboard-render.ts calls
+     invalidateSize() as it grows. */
+  flex: 1 1 auto;
+  min-height: 280px;
   overflow: hidden;
-  flex: 0 0 auto;
+}
+
+.mapCanvas {
+  background: var(--panel2);
+}
+
+/* Keep the label-free light basemap unchanged in light mode. In dark mode,
+   mute the same tiles toward the dashboard's charcoal palette so the data
+   overlay stays vivid without introducing a second tile provider. */
+.mapCanvas :global(.leaflet-tile-pane) {
+  transition: filter 160ms ease;
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-tile-pane) {
+  filter: brightness(0.42) saturate(0.55) contrast(0.82);
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-bar) {
+  border-color: rgba(31, 29, 26, 0.45);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-bar a) {
+  background: var(--panel);
+  border-bottom-color: var(--border);
+  color: var(--text);
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-bar a:hover) {
+  background: var(--panel2);
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-bar a.leaflet-disabled) {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.mapRotateBtn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: rgba(31, 29, 26, 0.88);
+  color: #f1ece4;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+
+.mapRotateBtn:hover {
+  border-color: var(--accent);
+  background: rgba(31, 29, 26, 0.96);
+}
+
+.mapRotateBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mapRotateBtnActive {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mapRotateIcon {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
 }
 
 /* The #map div sets its own width/height inline (see TripDashboard.tsx).
@@ -181,6 +265,42 @@
 .charts {
   /* Legacy — superseded by .tabs + .chartPaneWrap. Kept empty so any
      stray references don't break. */
+}
+
+/* Drag handle between the map and the plot. Kept visually light — a
+   grip pill that picks up the accent on hover/focus — but with a taller
+   hit area than the pill so it is easy to grab. */
+.splitter {
+  flex: 0 0 auto;
+  height: 11px;
+  position: relative;
+  cursor: row-resize;
+  /* Required for pointer-event dragging on touch: without it the browser
+     claims the gesture for scrolling. */
+  touch-action: none;
+}
+
+.splitter::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 46px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+.splitter:hover::before,
+.splitter:focus-visible::before {
+  background: var(--accent);
+  width: 64px;
+}
+
+.splitter:focus-visible {
+  outline: none;
 }
 
 /* Tab strip under the map */
@@ -274,8 +394,12 @@
 
 /* Single chart pane that swaps based on active tab */
 .chartPaneWrap {
-  flex: 1 1 45%;
-  min-height: 240px;
+  /* Capped, not elastic — extra height belongs to the map. The clamp is
+     only the default; PaneSplitter overrides it by setting --chart-h on
+     .right when the user drags the divider. border-box means this
+     includes the padding below. */
+  flex: 0 0 auto;
+  height: var(--chart-h, clamp(240px, 28vh, 380px));
   padding: 0 14px 14px;
   display: flex;
   flex-direction: column;

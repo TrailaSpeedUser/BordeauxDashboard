@@ -7,6 +7,7 @@ import { renderDashboard, PLOT_TABS } from "@/lib/dashboard-render";
 import type { Trip, MetricsResponse } from "@/lib/types";
 import { MetadataPanel } from "@/components/MetadataPanel";
 import { MapControls } from "@/components/MapControls";
+import { PaneSplitter } from "@/components/PaneSplitter";
 
 type Status =
   | { kind: "loading" }
@@ -20,14 +21,25 @@ export function TripDashboard({ trip }: { trip: Trip }) {
   // navigates away and back, the scripts are cached but onLoad won't
   // re-fire, so we need to detect the already-loaded state ourselves.
   const [libsReady, setLibsReady] = useState(() => {
-    if (typeof window === "undefined") return { leaflet: false, chart: false };
+    if (typeof window === "undefined") {
+      return { leaflet: false, rotate: false, chart: false };
+    }
     const w = window as any;
-    return { leaflet: !!w.L, chart: !!w.Chart };
+    return {
+      leaflet: !!w.L,
+      rotate: typeof w.L?.Map?.prototype?.setBearing === "function",
+      chart: !!w.Chart,
+    };
   });
   const [activeTab, setActiveTab] = useState(PLOT_TABS[0]?.canvasId ?? "");
   const [xAxis, setXAxis] = useState<"distance" | "time">("distance");
   const [timeAvailable, setTimeAvailable] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapBearing, setMapBearing] = useState<0 | -90>(0);
   const renderedRef = useRef(false);
+  // The splitter writes --chart-h here rather than lifting the size
+  // into state, which would re-render and rebuild the Leaflet map.
+  const rightPanelRef = useRef<HTMLElement>(null);
 
   // Fetch metrics
   useEffect(() => {
@@ -48,10 +60,11 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     };
   }, [trip.id]);
 
-  // Once both libs are loaded AND data is ready, render the visuals
+  // Once all visual libraries are loaded AND data is ready, render the visuals
   useEffect(() => {
     if (
       !libsReady.leaflet ||
+      !libsReady.rotate ||
       !libsReady.chart ||
       status.kind !== "ready" ||
       renderedRef.current
@@ -61,6 +74,9 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     renderedRef.current = true;
     try {
       renderDashboard(status.data, trip);
+      setMapReady(
+        typeof (window as any).__trailaSetMapBearing === "function",
+      );
     } catch (e) {
       console.error("Dashboard render failed:", e);
     }
@@ -116,6 +132,17 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     setXAxisFn?.(xAxis);
   }, [xAxis]);
 
+  const toggleMapOrientation = () => {
+    const setBearing = (window as any).__trailaSetMapBearing as
+      | ((degrees: number) => void)
+      | undefined;
+    if (!setBearing) return;
+
+    const nextBearing = mapBearing === 0 ? -90 : 0;
+    setBearing(nextBearing);
+    setMapBearing(nextBearing);
+  };
+
   return (
     <>
       <link
@@ -131,6 +158,13 @@ export function TripDashboard({ trip }: { trip: Trip }) {
         onLoad={() => setLibsReady((s) => ({ ...s, leaflet: true }))}
         strategy="afterInteractive"
       />
+      {libsReady.leaflet && !libsReady.rotate && (
+        <Script
+          src="https://cdn.jsdelivr.net/npm/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js"
+          onLoad={() => setLibsReady((s) => ({ ...s, rotate: true }))}
+          strategy="afterInteractive"
+        />
+      )}
       <Script
         src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
         onLoad={() => setLibsReady((s) => ({ ...s, chart: true }))}
@@ -151,9 +185,34 @@ export function TripDashboard({ trip }: { trip: Trip }) {
           </aside>
 
           {/* ============= RIGHT PANEL — map + tabbed plots ============= */}
-          <section className={`${styles.panel} ${styles.right}`}>
+          <section ref={rightPanelRef} className={`${styles.panel} ${styles.right}`}>
             <div className={styles.mapwrap}>
-              <div id="map" style={{ width: "100%", height: "100%", borderRadius: "18px 18px 0 0" }} />
+              <div
+                id="map"
+                className={styles.mapCanvas}
+                style={{ width: "100%", height: "100%", borderRadius: "18px 18px 0 0" }}
+              />
+              {mapReady && (
+                <button
+                  type="button"
+                  className={`${styles.mapRotateBtn} ${
+                    mapBearing !== 0 ? styles.mapRotateBtnActive : ""
+                  }`}
+                  onClick={toggleMapOrientation}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  aria-pressed={mapBearing !== 0}
+                  title={
+                    mapBearing === 0
+                      ? "Rotate map 90 degrees left"
+                      : "Reset map to north up"
+                  }
+                >
+                  <span className={styles.mapRotateIcon} aria-hidden="true">
+                    {mapBearing === 0 ? "↶" : "↑"}
+                  </span>
+                  {mapBearing === 0 ? "Rotate 90° left" : "North up"}
+                </button>
+              )}
               <div className={styles.legend}>
                 <div id="legendTitle" className={styles.small}>
                   Track overlay
@@ -166,6 +225,8 @@ export function TripDashboard({ trip }: { trip: Trip }) {
                 <div id="legendNote" className={styles.small} style={{ marginTop: 4 }} />
               </div>
             </div>
+
+            <PaneSplitter panelRef={rightPanelRef} styles={styles} />
 
             {/* Tab strip + x-axis selector */}
             <div className={styles.tabsRow}>
