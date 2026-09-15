@@ -20,20 +20,21 @@ export function TripDashboard({ trip }: { trip: Trip }) {
   // navigates away and back, the scripts are cached but onLoad won't
   // re-fire, so we need to detect the already-loaded state ourselves.
   const [libsReady, setLibsReady] = useState(() => {
-    if (typeof window === "undefined") return { leaflet: false, chart: false };
+    if (typeof window === "undefined") {
+      return { leaflet: false, rotate: false, chart: false };
+    }
     const w = window as any;
-    return { leaflet: !!w.L, chart: !!w.Chart };
+    return {
+      leaflet: !!w.L,
+      rotate: typeof w.L?.Map?.prototype?.setBearing === "function",
+      chart: !!w.Chart,
+    };
   });
-  // leaflet-rotate patches Leaflet's core prototypes, so it MUST execute
-  // after leaflet.js. Two sibling <Script strategy="afterInteractive">
-  // tags are not guaranteed to run in order, so gate the plugin tag on
-  // the core having loaded rather than rendering them side by side.
-  const [leafletCore, setLeafletCore] = useState(
-    () => typeof window !== "undefined" && !!(window as any).L,
-  );
   const [activeTab, setActiveTab] = useState(PLOT_TABS[0]?.canvasId ?? "");
   const [xAxis, setXAxis] = useState<"distance" | "time">("distance");
   const [timeAvailable, setTimeAvailable] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapBearing, setMapBearing] = useState<0 | -90>(0);
   const renderedRef = useRef(false);
 
   // Fetch metrics
@@ -55,10 +56,11 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     };
   }, [trip.id]);
 
-  // Once both libs are loaded AND data is ready, render the visuals
+  // Once all visual libraries are loaded AND data is ready, render the visuals
   useEffect(() => {
     if (
       !libsReady.leaflet ||
+      !libsReady.rotate ||
       !libsReady.chart ||
       status.kind !== "ready" ||
       renderedRef.current
@@ -68,6 +70,9 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     renderedRef.current = true;
     try {
       renderDashboard(status.data, trip);
+      setMapReady(
+        typeof (window as any).__trailaSetMapBearing === "function",
+      );
     } catch (e) {
       console.error("Dashboard render failed:", e);
     }
@@ -123,6 +128,17 @@ export function TripDashboard({ trip }: { trip: Trip }) {
     setXAxisFn?.(xAxis);
   }, [xAxis]);
 
+  const toggleMapOrientation = () => {
+    const setBearing = (window as any).__trailaSetMapBearing as
+      | ((degrees: number) => void)
+      | undefined;
+    if (!setBearing) return;
+
+    const nextBearing = mapBearing === 0 ? -90 : 0;
+    setBearing(nextBearing);
+    setMapBearing(nextBearing);
+  };
+
   return (
     <>
       <link
@@ -135,19 +151,14 @@ export function TripDashboard({ trip }: { trip: Trip }) {
         src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossOrigin=""
-        onLoad={() => setLeafletCore(true)}
+        onLoad={() => setLibsReady((s) => ({ ...s, leaflet: true }))}
         strategy="afterInteractive"
       />
-      {leafletCore && (
+      {libsReady.leaflet && !libsReady.rotate && (
         <Script
-          src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"
-          integrity="sha256-Ta4E5oRGbcJDRqmfp6qbzK7uDvaQyR0yDOGP6Bi1Ng8="
-          crossOrigin=""
+          src="https://cdn.jsdelivr.net/npm/@tomickigrzegorz/leaflet-rotate@0.2.4/dist/leaflet-rotate.umd.min.js"
+          onLoad={() => setLibsReady((s) => ({ ...s, rotate: true }))}
           strategy="afterInteractive"
-          // Either way the map renders; on error it simply has no rotate
-          // control. A CDN hiccup should not cost the whole dashboard.
-          onLoad={() => setLibsReady((s) => ({ ...s, leaflet: true }))}
-          onError={() => setLibsReady((s) => ({ ...s, leaflet: true }))}
         />
       )}
       <Script
@@ -172,7 +183,32 @@ export function TripDashboard({ trip }: { trip: Trip }) {
           {/* ============= RIGHT PANEL — map + tabbed plots ============= */}
           <section className={`${styles.panel} ${styles.right}`}>
             <div className={styles.mapwrap}>
-              <div id="map" style={{ width: "100%", height: "100%", borderRadius: "18px 18px 0 0" }} />
+              <div
+                id="map"
+                className={styles.mapCanvas}
+                style={{ width: "100%", height: "100%", borderRadius: "18px 18px 0 0" }}
+              />
+              {mapReady && (
+                <button
+                  type="button"
+                  className={`${styles.mapRotateBtn} ${
+                    mapBearing !== 0 ? styles.mapRotateBtnActive : ""
+                  }`}
+                  onClick={toggleMapOrientation}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  aria-pressed={mapBearing !== 0}
+                  title={
+                    mapBearing === 0
+                      ? "Rotate map 90 degrees left"
+                      : "Reset map to north up"
+                  }
+                >
+                  <span className={styles.mapRotateIcon} aria-hidden="true">
+                    {mapBearing === 0 ? "↶" : "↑"}
+                  </span>
+                  {mapBearing === 0 ? "Rotate 90° left" : "North up"}
+                </button>
+              )}
               <div className={styles.legend}>
                 <div id="legendTitle" className={styles.small}>
                   Track overlay

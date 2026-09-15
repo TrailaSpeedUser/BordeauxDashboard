@@ -153,6 +153,85 @@
   overflow: hidden;
 }
 
+.mapCanvas {
+  background: var(--panel2);
+}
+
+/* Keep the label-free light basemap unchanged in light mode. In dark mode,
+   mute the same tiles toward the dashboard's charcoal palette so the data
+   overlay stays vivid without introducing a second tile provider. */
+.mapCanvas :global(.leaflet-tile-pane) {
+  transition: filter 160ms ease;
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-tile-pane) {
+  filter: brightness(0.42) saturate(0.55) contrast(0.82);
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-bar) {
+  border-color: rgba(31, 29, 26, 0.45);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-bar a) {
+  background: var(--panel);
+  border-bottom-color: var(--border);
+  color: var(--text);
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-bar a:hover) {
+  background: var(--panel2);
+}
+
+:global([data-theme="dark"]) .mapCanvas :global(.leaflet-bar a.leaflet-disabled) {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.mapRotateBtn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: rgba(31, 29, 26, 0.88);
+  color: #f1ece4;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+
+.mapRotateBtn:hover {
+  border-color: var(--accent);
+  background: rgba(31, 29, 26, 0.96);
+}
+
+.mapRotateBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mapRotateBtnActive {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mapRotateIcon {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
 /* The #map div sets its own width/height inline (see TripDashboard.tsx).
    Keeping selector-based styling out of CSS modules avoids hash-scoping
    surprises. */
